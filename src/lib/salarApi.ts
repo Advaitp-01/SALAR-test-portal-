@@ -23,12 +23,84 @@ import type {
   TenantDomain,
 } from '../types/salar';
 
+const OWNER_BEARER_KEY = 'salar_owner_bearer';
+
+function getOwnerBearer(): string {
+  try {
+    return window.sessionStorage.getItem(OWNER_BEARER_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+export function setOwnerBearer(token: string): void {
+  try {
+    if (token) window.sessionStorage.setItem(OWNER_BEARER_KEY, token);
+    else window.sessionStorage.removeItem(OWNER_BEARER_KEY);
+  } catch {
+    // ignore storage errors
+  }
+}
+
+export function setTenantBearer(orgId: string, kind: 'admin' | 'student', token: string): void {
+  try {
+    const key = `salar_tenant_bearer_${orgId}_${kind}`;
+    if (token) window.sessionStorage.setItem(key, token);
+    else window.sessionStorage.removeItem(key);
+  } catch {
+    // ignore storage errors
+  }
+}
+
+export function getTenantBearer(orgId: string, preferKind?: 'admin' | 'student'): string {
+  try {
+    if (preferKind) {
+      return window.sessionStorage.getItem(`salar_tenant_bearer_${orgId}_${preferKind}`) || '';
+    }
+    return (
+      window.sessionStorage.getItem(`salar_tenant_bearer_${orgId}_admin`) ||
+      window.sessionStorage.getItem(`salar_tenant_bearer_${orgId}_student`) ||
+      ''
+    );
+  } catch {
+    return '';
+  }
+}
+
 async function apiRequest<T>(url: string, options: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {
     'X-Requested-With': 'XMLHttpRequest',
     ...(options.body ? { 'Content-Type': 'application/json' } : {}),
     ...((options.headers as Record<string, string>) || {}),
   };
+
+  if (!headers.Authorization && !headers.authorization) {
+    if (
+      url.startsWith('/api/owner') &&
+      !url.startsWith('/api/owner/auth/login') &&
+      !url.startsWith('/api/owner/auth/claim') &&
+      !url.startsWith('/api/owner/auth/status')
+    ) {
+      const ownerToken = getOwnerBearer();
+      if (ownerToken) {
+        headers.Authorization = `Bearer ${ownerToken}`;
+      }
+    } else {
+      const tenantMatch = url.match(/^\/api\/tenant\/([^/]+)/);
+      if (tenantMatch && tenantMatch[1]) {
+        const orgId = decodeURIComponent(tenantMatch[1]);
+        const preferKind = url.includes('/auth/admin/')
+          ? 'admin'
+          : url.includes('/auth/student/')
+          ? 'student'
+          : undefined;
+        const tenantToken = getTenantBearer(orgId, preferKind);
+        if (tenantToken) {
+          headers.Authorization = `Bearer ${tenantToken}`;
+        }
+      }
+    }
+  }
 
   const res = await fetch(url, {
     ...options,
@@ -45,6 +117,9 @@ async function apiRequest<T>(url: string, options: RequestInit = {}): Promise<T>
   }
 
   if (!res.ok) {
+    if (res.status === 401 && url.startsWith('/api/owner') && !url.startsWith('/api/owner/auth/login')) {
+      setOwnerBearer('');
+    }
     const errObj = parsed as { error?: string; pendingInvoices?: string[]; mfaRequired?: boolean };
     const err = new Error(errObj.error || `HTTP ${res.status}`) as Error & {
       status?: number;
@@ -68,6 +143,8 @@ export const salarApi = {
     const pMatch = p.match(/^\/p\/([^/]+)(?:\/pay)?$/i);
     if (pMatch && pMatch[1] && !params.has('slug')) {
       params.set('slug', decodeURIComponent(pMatch[1]));
+    } else if ((p === '/test' || p === '/salar-test') && !params.has('slug')) {
+      params.set('slug', 'salar-test');
     }
     const qs = params.toString();
     return apiRequest<TenantContextResponse>(`/api/public/tenant-context${qs ? `?${qs}` : ''}`);
@@ -80,6 +157,8 @@ export const salarApi = {
     const pMatch = p.match(/^\/p\/([^/]+)(?:\/pay)?$/i);
     if (pMatch && pMatch[1] && !params.has('slug') && !params.has('org')) {
       params.set('slug', decodeURIComponent(pMatch[1]));
+    } else if ((p === '/test' || p === '/salar-test') && !params.has('slug') && !params.has('org')) {
+      params.set('slug', 'salar-test');
     }
     const qs = params.toString();
     return apiRequest<PublicManualPaymentInfo>(`/api/public/manual-payment-info${qs ? `?${qs}` : ''}`);
@@ -105,22 +184,37 @@ export const salarApi = {
   getSession: () =>
     apiRequest<{ authenticated: boolean; username?: string; role?: string }>('/api/owner/auth/session'),
 
-  claimOwner: (payload: { username: string; password: string; displayName?: string; email?: string }) =>
-    apiRequest<{ ok: boolean; username: string; role: string }>('/api/owner/auth/claim', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    }),
+  claimOwner: async (payload: { username: string; password: string; displayName?: string; email?: string }) => {
+    const res = await apiRequest<{ ok: boolean; username: string; role: string; token?: string }>(
+      '/api/owner/auth/claim',
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    );
+    if (res.token) setOwnerBearer(res.token);
+    return res;
+  },
 
-  login: (payload: { username: string; password: string; mfaCode?: string }) =>
-    apiRequest<{ ok?: boolean; mfaRequired?: boolean; username?: string; role?: string }>(
+  login: async (payload: { username: string; password: string; mfaCode?: string }) => {
+    const res = await apiRequest<{ ok?: boolean; mfaRequired?: boolean; username?: string; role?: string; token?: string }>(
       '/api/owner/auth/login',
       {
         method: 'POST',
         body: JSON.stringify(payload),
       }
-    ),
+    );
+    if (res.ok && res.token) setOwnerBearer(res.token);
+    return res;
+  },
 
-  logout: () => apiRequest<{ ok: boolean }>('/api/owner/auth/logout', { method: 'POST' }),
+  logout: async () => {
+    try {
+      return await apiRequest<{ ok: boolean }>('/api/owner/auth/logout', { method: 'POST' });
+    } finally {
+      setOwnerBearer('');
+    }
+  },
 
   getBootstrap: () => apiRequest<OwnerBootstrapData>('/api/owner/bootstrap'),
 
@@ -470,30 +564,41 @@ export const salarApi = {
       `/api/tenant/${encodeURIComponent(orgId)}/auth/admin/session`
     ),
 
-  claimTenantAdmin: (orgId: string, passcode: string, email?: string) =>
-    apiRequest<{ ok: boolean; token: string; role: string }>(
+  claimTenantAdmin: async (orgId: string, passcode: string, email?: string) => {
+    const res = await apiRequest<{ ok: boolean; token: string; role: string }>(
       `/api/tenant/${encodeURIComponent(orgId)}/auth/admin/claim`,
       { method: 'POST', body: JSON.stringify({ passcode, ...(email ? { email } : {}) }) }
-    ),
+    );
+    if (res.token) setTenantBearer(orgId, 'admin', res.token);
+    return res;
+  },
 
-  loginTenantAdmin: (orgId: string, passcode: string, email?: string) =>
-    apiRequest<{ ok: boolean; token: string; role: string }>(
+  loginTenantAdmin: async (orgId: string, passcode: string, email?: string) => {
+    const res = await apiRequest<{ ok: boolean; token: string; role: string }>(
       `/api/tenant/${encodeURIComponent(orgId)}/auth/admin/login`,
       { method: 'POST', body: JSON.stringify({ passcode, ...(email ? { email } : {}) }) }
-    ),
+    );
+    if (res.token) setTenantBearer(orgId, 'admin', res.token);
+    return res;
+  },
 
-  logoutTenantAdmin: (orgId: string) =>
-    apiRequest<{ ok: boolean }>(
-      `/api/tenant/${encodeURIComponent(orgId)}/auth/admin/logout`,
-      { method: 'POST' }
-    ),
+  logoutTenantAdmin: async (orgId: string) => {
+    try {
+      return await apiRequest<{ ok: boolean }>(
+        `/api/tenant/${encodeURIComponent(orgId)}/auth/admin/logout`,
+        { method: 'POST' }
+      );
+    } finally {
+      setTenantBearer(orgId, 'admin', '');
+    }
+  },
 
   getTenantStudentSession: (orgId: string) =>
     apiRequest<{ authenticated: boolean; role?: string; student?: Record<string, unknown> }>(
       `/api/tenant/${encodeURIComponent(orgId)}/auth/student/session`
     ),
 
-  registerTenantStudent: (
+  registerTenantStudent: async (
     orgId: string,
     payload: {
       name: string;
@@ -504,21 +609,32 @@ export const salarApi = {
       targetExam?: string;
       origin?: 'PORTAL_SIGNUP' | 'QUICK_JOIN';
     }
-  ) =>
-    apiRequest<{ ok: boolean; student: Record<string, unknown> }>(
+  ) => {
+    const res = await apiRequest<{ ok: boolean; token?: string; student: Record<string, unknown> }>(
       `/api/tenant/${encodeURIComponent(orgId)}/auth/student/register`,
       { method: 'POST', body: JSON.stringify(payload) }
-    ),
+    );
+    if (res.token) setTenantBearer(orgId, 'student', res.token);
+    return res;
+  },
 
-  loginTenantStudent: (orgId: string, payload: { email: string; password: string }) =>
-    apiRequest<{ ok: boolean; student: Record<string, unknown> }>(
+  loginTenantStudent: async (orgId: string, payload: { email: string; password: string }) => {
+    const res = await apiRequest<{ ok: boolean; token?: string; student: Record<string, unknown> }>(
       `/api/tenant/${encodeURIComponent(orgId)}/auth/student/login`,
       { method: 'POST', body: JSON.stringify(payload) }
-    ),
+    );
+    if (res.token) setTenantBearer(orgId, 'student', res.token);
+    return res;
+  },
 
-  logoutTenantStudent: (orgId: string) =>
-    apiRequest<{ ok: boolean }>(
-      `/api/tenant/${encodeURIComponent(orgId)}/auth/student/logout`,
-      { method: 'POST' }
-    ),
+  logoutTenantStudent: async (orgId: string) => {
+    try {
+      return await apiRequest<{ ok: boolean }>(
+        `/api/tenant/${encodeURIComponent(orgId)}/auth/student/logout`,
+        { method: 'POST' }
+      );
+    } finally {
+      setTenantBearer(orgId, 'student', '');
+    }
+  },
 };

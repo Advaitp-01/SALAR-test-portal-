@@ -114,14 +114,31 @@ function randomDocId(): string {
   return `td_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function readTenantBearerToken(orgId: string): string {
+  try {
+    return (
+      window.sessionStorage.getItem(`salar_tenant_bearer_${orgId}_admin`) ||
+      window.sessionStorage.getItem(`salar_tenant_bearer_${orgId}_student`) ||
+      ''
+    );
+  } catch {
+    return '';
+  }
+}
+
 async function tenantDbFetch<T>(orgId: string, endpoint: string, body: unknown): Promise<T> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'X-Requested-With': 'XMLHttpRequest',
+  };
+  const bearer = readTenantBearerToken(orgId);
+  if (bearer) {
+    headers.Authorization = `Bearer ${bearer}`;
+  }
   const res = await fetch(`/api/tenant/${encodeURIComponent(orgId)}/db${endpoint}`, {
     method: 'POST',
     credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Requested-With': 'XMLHttpRequest',
-    },
+    headers,
     body: JSON.stringify(body),
   });
   const text = await res.text();

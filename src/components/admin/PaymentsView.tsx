@@ -8,7 +8,7 @@ import { useAuth } from '../../context/AuthContext';
 import type { PaymentRecord } from '../../types/portal';
 
 export const PaymentsView: React.FC = () => {
-  const { firebaseUser } = useAuth();
+  const { firebaseUser, tenantContext, settings } = useAuth();
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<'PENDING' | 'APPROVED' | 'REJECTED' | 'ALL'>('PENDING');
@@ -55,11 +55,13 @@ export const PaymentsView: React.FC = () => {
       .sort((a, b) => (b.submissionDate || '').localeCompare(a.submissionDate || ''));
   }, [payments, tab, search]);
 
+  const verifierEmail = firebaseUser?.email || tenantContext?.email || settings.email || 'admin@institute.local';
+
   const handleApprove = async (p: PaymentRecord) => {
     setProcessingId(p.id);
     setBanner('');
     try {
-      await approvePaymentTransaction(p, firebaseUser?.email || 'super-admin@gurukul.local');
+      await approvePaymentTransaction(p, verifierEmail);
       setBanner(`Approved UTR ${p.utr} and activated enrollment for ${p.studentName}.`);
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `payments/${p.id}`);
@@ -77,7 +79,7 @@ export const PaymentsView: React.FC = () => {
       await updateDoc(doc(db, 'payments', rejectTarget.id), {
         status: 'REJECTED',
         rejectionReason: rejectionReason.trim() || 'UTR could not be verified in bank statement.',
-        verifiedBy: firebaseUser?.email || 'super-admin@gurukul.local',
+        verifiedBy: verifierEmail,
         verifiedAt: now,
         updatedAt: now,
       });

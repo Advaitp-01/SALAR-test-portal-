@@ -176,25 +176,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [routeKey]);
 
-  // Restore Admin session cookie (primary root OR isolated secondary tenant)
+  // Restore Admin session cookie or Bearer token (primary root OR isolated secondary tenant)
   useEffect(() => {
     if (!tenantResolved) return;
     let active = true;
 
-    const url = isIsolatedTenant
-      ? `/api/tenant/${encodeURIComponent(activeOrgId)}/auth/admin/session`
-      : '/api/auth/admin/session';
+    const checkSession = isIsolatedTenant
+      ? salarApi.getTenantAdminSession(activeOrgId).catch(() => ({ authenticated: false as const }))
+      : fetch('/api/auth/admin/session', { credentials: 'include' })
+          .then((r) => (r.ok ? r.json() : { authenticated: false }))
+          .catch(() => ({ authenticated: false }));
 
-    fetch(url, { credentials: 'include' })
-      .then((r) => (r.ok ? r.json() : { authenticated: false }))
-      .then((data) => {
+    Promise.resolve(checkSession)
+      .then((data: { authenticated?: boolean; token?: string }) => {
         if (!active) return;
         if (data?.authenticated) {
           setAdminGateToken(data.token || 'cookie-session');
           setRole('SUPER_ADMIN');
         }
       })
-      .catch(() => {})
       .finally(() => {
         if (active) setAdminSessionChecked(true);
       });

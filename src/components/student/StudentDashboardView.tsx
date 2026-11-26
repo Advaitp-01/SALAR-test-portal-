@@ -77,7 +77,7 @@ export const StudentDashboardView: React.FC<StudentDashboardViewProps> = ({ onNa
       () => {}
     );
     const u5 = onSnapshot(
-      query(collection(db, 'studyMaterials'), where('subject', '==', 'Mathematics')),
+      collection(db, 'studyMaterials'),
       (snap) => {
         const list = snap.docs
           .map((d) => ({ id: d.id, ...(d.data() as Omit<StudyMaterial, 'id'>) }))
@@ -275,7 +275,7 @@ export const StudentDashboardView: React.FC<StudentDashboardViewProps> = ({ onNa
 
         <section className="xl:col-span-6 bg-white border border-[#E2E8F0] rounded-xl p-5">
           <h2 className="font-display font-bold text-base text-[#0F172A] mb-1">Performance Trend (%)</h2>
-          <p className="text-xs text-slate-500 mb-4">Your Mathematics test percentages across recent CBT exams</p>
+          <p className="text-xs text-slate-500 mb-4">Your test percentages across recent CBT exams</p>
           {chartData.length === 0 ? (
             <div className="h-48 border border-dashed border-[#E2E8F0] rounded-lg flex items-center justify-center text-xs text-slate-500">
               Attempt a live examination to visualize your performance trend.
@@ -353,7 +353,7 @@ export const StudentDashboardView: React.FC<StudentDashboardViewProps> = ({ onNa
 
         <section className="xl:col-span-6 bg-white border border-[#E2E8F0] rounded-xl p-5">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="font-display font-bold text-base text-[#0F172A]">Mathematics Study Material &amp; DPPs</h2>
+            <h2 className="font-display font-bold text-base text-[#0F172A]">Study Material &amp; Formula Sheets</h2>
             <span className="font-mono text-xs text-slate-500">{materials.length} Files</span>
           </div>
           {materials.length === 0 ? (

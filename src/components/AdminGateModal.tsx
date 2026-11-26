@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Eye, EyeOff, Info, Lock, ShieldCheck, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { salarApi } from '../lib/salarApi';
 
 interface AdminGateModalProps {
   isOpen: boolean;
@@ -19,26 +20,27 @@ export const AdminGateModal: React.FC<AdminGateModalProps> = ({ isOpen, onClose,
   const [error, setError] = useState('');
 
   const tenantOrgId = tenantContext?.organizationId;
-  const statusUrl =
-    isIsolatedTenant && tenantOrgId
-      ? `/api/tenant/${encodeURIComponent(tenantOrgId)}/auth/admin/status`
-      : '/api/auth/admin/status';
+  const registeredAdminEmail = tenantContext?.email || settings.email || '';
 
   useEffect(() => {
     if (!isOpen) return;
     setError('');
-    setAdminEmail('');
+    setAdminEmail(isIsolatedTenant && registeredAdminEmail ? registeredAdminEmail : '');
     setPasscode('');
     setConfirmPasscode('');
-    fetch(statusUrl)
-      .then((r) => r.json())
-      .then((d) => {
-        setRequiresClaim(Boolean(d.requiresClaim));
-      })
-      .catch(() => {
-        setRequiresClaim(false);
-      });
-  }, [isOpen, statusUrl]);
+
+    if (isIsolatedTenant && tenantOrgId) {
+      salarApi
+        .getTenantAdminStatus(tenantOrgId)
+        .then((d) => setRequiresClaim(Boolean(d.requiresClaim)))
+        .catch(() => setRequiresClaim(false));
+    } else {
+      fetch('/api/auth/admin/status')
+        .then((r) => r.json())
+        .then((d) => setRequiresClaim(Boolean(d.requiresClaim)))
+        .catch(() => setRequiresClaim(false));
+    }
+  }, [isOpen, isIsolatedTenant, tenantOrgId, registeredAdminEmail]);
 
   if (!isOpen) return null;
 
@@ -82,12 +84,18 @@ export const AdminGateModal: React.FC<AdminGateModalProps> = ({ isOpen, onClose,
 
     setLoading(true);
     try {
-      const endpoint =
-        isIsolatedTenant && tenantOrgId
-          ? `/api/tenant/${encodeURIComponent(tenantOrgId)}/auth/admin/${requiresClaim ? 'claim' : 'login'}`
-          : requiresClaim
-          ? '/api/auth/admin/claim'
-          : '/api/auth/admin/login';
+      if (isIsolatedTenant && tenantOrgId) {
+        const res = requiresClaim
+          ? await salarApi.claimTenantAdmin(tenantOrgId, passcode, adminEmail.trim())
+          : await salarApi.loginTenantAdmin(tenantOrgId, passcode, adminEmail.trim());
+        if (res.token) {
+          unlockAdminWithToken(res.token);
+          onSuccess();
+        }
+        return;
+      }
+
+      const endpoint = requiresClaim ? '/api/auth/admin/claim' : '/api/auth/admin/login';
       const resp = await fetch(endpoint, {
         method: 'POST',
         credentials: 'include',
@@ -95,9 +103,7 @@ export const AdminGateModal: React.FC<AdminGateModalProps> = ({ isOpen, onClose,
           'Content-Type': 'application/json',
           'X-Requested-With': 'XMLHttpRequest',
         },
-        body: JSON.stringify(
-          isIsolatedTenant ? { email: adminEmail.trim(), passcode } : { passcode }
-        ),
+        body: JSON.stringify({ passcode }),
       });
       const data = await resp.json();
       if (!resp.ok) {
@@ -108,8 +114,8 @@ export const AdminGateModal: React.FC<AdminGateModalProps> = ({ isOpen, onClose,
         unlockAdminWithToken(data.token);
         onSuccess();
       }
-    } catch {
-      setError('Unable to reach authentication service.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to reach authentication service.');
     } finally {
       setLoading(false);
     }
@@ -182,10 +188,15 @@ export const AdminGateModal: React.FC<AdminGateModalProps> = ({ isOpen, onClose,
                   required
                   value={adminEmail}
                   onChange={(e) => setAdminEmail(e.target.value)}
-                  placeholder="admin@institute.com"
+                  placeholder={registeredAdminEmail || 'admin@institute.com'}
                   autoComplete="off"
                   className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:border-[#2563EB]"
                 />
+                {registeredAdminEmail && (
+                  <p className="text-[11px] font-mono text-slate-500 mt-1">
+                    Registered Admin Email: {registeredAdminEmail}
+                  </p>
+                )}
               </div>
             )}
 

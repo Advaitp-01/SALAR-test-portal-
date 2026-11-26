@@ -47,7 +47,7 @@ const SIDEBAR_ITEMS: Array<{ id: AdminModule; label: string; icon: React.Compone
 ];
 
 export const AdminLayout: React.FC<AdminLayoutProps> = ({ activeModule, onSelectModule, children }) => {
-  const { settings, firebaseUser, isIsolatedTenant, signInWithGoogle, logout } = useAuth();
+  const { settings, tenantContext, firebaseUser, isIsolatedTenant, signInWithGoogle, logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const instituteInitial = (settings.instituteName.trim().charAt(0) || 'S').toUpperCase();
 
@@ -113,7 +113,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ activeModule, onSelect
       <div className="p-3 border-t border-[#E2E8F0] bg-slate-50 shrink-0 space-y-2">
         <div className="px-2 py-1">
           <p className="text-xs font-semibold text-[#0F172A] truncate">
-            {firebaseUser?.email || 'Password Gate Session'}
+            {firebaseUser?.email || tenantContext?.email || settings.email || 'Super Admin Session'}
           </p>
           <p className="text-[11px] font-mono text-slate-500">SUPER_ADMIN</p>
         </div>

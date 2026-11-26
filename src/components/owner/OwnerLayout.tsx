@@ -7,6 +7,7 @@ import {
   Building2,
   CreditCard,
   Database,
+  ExternalLink,
   FileText,
   Globe,
   HardDrive,
@@ -193,6 +194,17 @@ export const OwnerLayout: React.FC<OwnerLayoutProps> = ({
           </div>
 
           <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+            <a
+              href="/p/salar-test"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-2 text-xs font-semibold text-[#0032A0] bg-blue-50 border border-blue-200 hover:bg-blue-100 rounded-lg transition-colors min-h-[38px]"
+              title="Open SALAR Portal Test Sandbox"
+            >
+              <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden sm:inline">SALAR Portal Test</span>
+              <span className="sm:hidden">Test</span>
+            </a>
             <span className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-[#E2E8F0] bg-slate-50 text-xs font-mono text-slate-700 tabular-nums">
               Host: {data.infrastructure.serverHealth} ({data.infrastructure.memoryPercent}% RAM)
             </span>

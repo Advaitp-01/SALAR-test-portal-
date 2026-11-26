@@ -79,6 +79,7 @@ export const OwnerClientsView: React.FC<OwnerClientsViewProps> = ({
   // Shareable portal link & passcode helpers
   const [lastCreatedOrg, setLastCreatedOrg] = useState<Organization | null>(null);
   const [lastCreatedPortalPath, setLastCreatedPortalPath] = useState('');
+  const [lastCreatedPasscodeSet, setLastCreatedPasscodeSet] = useState(false);
   const [copiedId, setCopiedId] = useState('');
   const [newClientPasscode, setNewClientPasscode] = useState('');
   const [passcodeSaving, setPasscodeSaving] = useState(false);
@@ -161,10 +162,12 @@ export const OwnerClientsView: React.FC<OwnerClientsViewProps> = ({
         initialAdminPasscode: initialAdminPasscode.trim() || undefined,
       });
       const portalPath = res.portalPath || res.organization.portalPath || `/p/${res.organization.portalSlug}`;
+      const hadPasscode = Boolean(initialAdminPasscode.trim());
       setLastCreatedOrg(res.organization);
       setLastCreatedPortalPath(portalPath);
+      setLastCreatedPasscodeSet(hadPasscode);
       setMessage(
-        `Provisioned ${res.organization.instituteName} (${res.organization.id}) on database ${res.organization.databaseId || 'isolated'} with license ${res.license.licenseKey}. Portal URL: ${window.location.origin}${portalPath}`
+        `Provisioned ${res.organization.instituteName} (${res.organization.id}) on database ${res.organization.databaseId || 'isolated'} with license ${res.license.licenseKey}. Exam Portal ready at ${window.location.origin}${portalPath} (Admin: ${res.organization.email}${hadPasscode ? ' · Passcode pre-configured' : ' · Claim Admin Gate on first visit'}).`
       );
       setCreateOpen(false);
       setInstituteName('');
@@ -315,9 +318,10 @@ export const OwnerClientsView: React.FC<OwnerClientsViewProps> = ({
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 px-2.5 py-1 bg-[#0032A0] text-white rounded font-semibold hover:bg-[#00257a]"
+                title={lastCreatedPasscodeSet ? 'Open Client Exam Portal' : 'Open Portal & Claim Admin Gate'}
               >
                 <ExternalLink className="w-3 h-3" />
-                Open Portal
+                Open Client Exam Portal
               </a>
             </div>
           )}
@@ -353,17 +357,28 @@ export const OwnerClientsView: React.FC<OwnerClientsViewProps> = ({
           </select>
         </div>
 
-        <button
-          type="button"
-          onClick={() => {
-            setError('');
-            setCreateOpen(true);
-          }}
-          className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 sm:py-2 bg-[#0032A0] hover:bg-[#00257a] text-white text-xs font-semibold rounded-lg transition-colors whitespace-nowrap"
-        >
-          <Plus className="w-4 h-4" />
-          Register Client Organization
-        </button>
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0">
+          <a
+            href="/p/salar-test"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-3.5 py-2.5 sm:py-2 border border-blue-200 bg-blue-50 hover:bg-blue-100 text-[#0032A0] text-xs font-semibold rounded-lg transition-colors whitespace-nowrap"
+          >
+            <ExternalLink className="w-4 h-4" />
+            Open SALAR Portal Test
+          </a>
+          <button
+            type="button"
+            onClick={() => {
+              setError('');
+              setCreateOpen(true);
+            }}
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 sm:py-2 bg-[#0032A0] hover:bg-[#00257a] text-white text-xs font-semibold rounded-lg transition-colors whitespace-nowrap"
+          >
+            <Plus className="w-4 h-4" />
+            Register Client Organization
+          </button>
+        </div>
       </div>
 
       {/* Mobile Card List (< md) */}

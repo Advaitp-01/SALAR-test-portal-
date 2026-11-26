@@ -85,6 +85,10 @@ const PortalShell: React.FC = () => {
 
   useEffect(() => {
     if (!isOwnerRoute) return;
+    if (ownerAuthenticated && pathname === '/owner/dashboard') {
+      setOwnerAuthChecked(true);
+      return;
+    }
     let active = true;
     setOwnerAuthChecked(false);
     salarApi
@@ -111,7 +115,7 @@ const PortalShell: React.FC = () => {
     return () => {
       active = false;
     };
-  }, [isOwnerRoute, pathname, navigateTo]);
+  }, [isOwnerRoute, pathname, ownerAuthenticated, navigateTo]);
 
   // Support direct ?exam=<id> link after student login
   useEffect(() => {

@@ -485,13 +485,13 @@ export async function approvePaymentTransaction(payment: PaymentRecord, verifier
  * Seeds clearly labeled Mathematics demo data (Class 11th & 12th, JEE Main, JEE Advanced, MHT-CET)
  * only on explicit Admin action when setting up a fresh workspace.
  */
-export async function seedMathematicsDemoData() {
+export async function seedMathematicsDemoData(preserveSettings?: InstituteSettings) {
   const now = new Date().toISOString();
   const batch = writeBatch(db);
 
-  // 1. Settings
+  // 1. Settings (preserve isolated client branding if provided)
   batch.set(doc(db, 'settings', 'institute'), {
-    ...DEFAULT_INSTITUTE_SETTINGS,
+    ...(preserveSettings || DEFAULT_INSTITUTE_SETTINGS),
     updatedAt: now,
   });
 

@@ -147,7 +147,7 @@ export const OwnerLoginView: React.FC<OwnerLoginViewProps> = ({
           ) : status?.requiresClaim ? (
             <form onSubmit={handleClaim} className="space-y-4" autoComplete="off">
               <div className="p-3 rounded-lg bg-slate-50 border border-[#E2E8F0] text-xs text-slate-600 leading-relaxed">
-                No hardcoded owner credentials exist. Create the initial Platform Owner credentials below (stored with scrypt hashing and HTTP-only signed session cookies).
+                No hardcoded owner credentials exist. Create the initial Platform Owner credentials below (stored with scrypt hashing and signed session cookies + Bearer tokens). For persistent multi-instance Vercel hosting, also set <span className="font-mono text-[#0F172A]">OWNER_USERNAME</span>, <span className="font-mono text-[#0F172A]">OWNER_PASSWORD</span>, and <span className="font-mono text-[#0F172A]">SESSION_SECRET</span> in Vercel Environment Variables.
               </div>
 
               <div>
@@ -292,7 +292,7 @@ export const OwnerLoginView: React.FC<OwnerLoginViewProps> = ({
           )}
 
           <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between text-[11px] font-mono text-slate-400">
-            <span>HTTP-ONLY SESSION COOKIE</span>
+            <span>SIGNED COOKIE + BEARER AUTH</span>
             <span>RATE LIMITED</span>
           </div>
         </div>

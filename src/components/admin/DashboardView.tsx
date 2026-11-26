@@ -29,7 +29,7 @@ interface DashboardViewProps {
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
-  const { syncStatus } = useAuth();
+  const { syncStatus, settings, tenantContext, isIsolatedTenant } = useAuth();
   const [students, setStudents] = useState<StudentProfile[]>([]);
   const [exams, setExams] = useState<Exam[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
@@ -139,20 +139,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
       .slice(0, 6);
   }, [attempts]);
 
+  const portalBase =
+    tenantContext?.portalPath && tenantContext.portalPath !== '/' ? tenantContext.portalPath : '';
+
   const handleCopyExamLink = (exam: Exam) => {
-    const url = `${window.location.origin}/?exam=${exam.id}`;
+    const url = `${window.location.origin}${portalBase}/?exam=${exam.id}`;
     navigator.clipboard.writeText(url).catch(() => {});
     setCopiedId(exam.id);
     setTimeout(() => setCopiedId(null), 2000);
   };
 
   const handleShareExam = async (exam: Exam) => {
-    const url = `${window.location.origin}/?exam=${exam.id}`;
+    const url = `${window.location.origin}${portalBase}/?exam=${exam.id}`;
     if (navigator.share) {
       try {
         await navigator.share({
           title: exam.title,
-          text: `Attempt ${exam.title} (${exam.code}) on Giri Sir's Gurukul Classes`,
+          text: `Attempt ${exam.title} (${exam.code}) on ${settings.instituteName}`,
           url,
         });
         return;
@@ -167,10 +170,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
     setSeeding(true);
     setSeedMessage('');
     try {
-      await seedMathematicsDemoData();
+      await seedMathematicsDemoData(isIsolatedTenant ? settings : undefined);
       setSeedMessage('Sample Class 11th & 12th Mathematics demo records created.');
     } catch (err) {
-      setSeedMessage(err instanceof Error ? err.message : 'Unable to seed sample data. Ensure Admin Google Auth is connected.');
+      setSeedMessage(err instanceof Error ? err.message : 'Unable to seed sample data. Ensure Admin auth is connected.');
     } finally {
       setSeeding(false);
     }

@@ -15,9 +15,11 @@ import {
 import { db } from '../../lib/firebase';
 import { handleFirestoreError, OperationType } from '../../lib/firestoreError';
 import { exportToCsv } from '../../lib/portalService';
+import { useAuth } from '../../context/AuthContext';
 import type { Batch, ExamAttempt, StudentProfile } from '../../types/portal';
 
 export const StudentsView: React.FC = () => {
+  const { tenantContext } = useAuth();
   const [students, setStudents] = useState<StudentProfile[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
   const [attempts, setAttempts] = useState<ExamAttempt[]>([]);
@@ -110,7 +112,11 @@ export const StudentsView: React.FC = () => {
     setWhatsapp('');
     setClassLevel('Class 12th');
     setTargetExam('JEE Main');
-    setRollNumber(`GY-${Math.floor(10000 + Math.random() * 89999)}`);
+    const rollPrefix =
+      tenantContext?.portalSlug && tenantContext.portalSlug !== 'gurukul'
+        ? tenantContext.portalSlug.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 3) || 'ST'
+        : 'GY';
+    setRollNumber(`${rollPrefix}-${Math.floor(10000 + Math.random() * 89999)}`);
     setUsername('');
     setStatus('ACTIVE');
     setModalOpen(true);
@@ -197,8 +203,9 @@ export const StudentsView: React.FC = () => {
   };
 
   const handleExportCsv = () => {
+    const fileSlug = (tenantContext?.portalSlug || 'institute').replace(/[^a-z0-9-_]/gi, '-').toLowerCase();
     exportToCsv(
-      'gurukul-students.csv',
+      `${fileSlug}-students.csv`,
       ['Name', 'Email', 'Mobile', 'WhatsApp', 'Class', 'Target', 'Roll Number', 'Username', 'Batch', 'Status'],
       filteredStudents.map((s) => [
         s.name,

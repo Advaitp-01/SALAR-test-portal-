@@ -1,6 +1,18 @@
 {
   "ownerUsers": [],
-  "ownerSessions": [],
+  "ownerSessions": [
+    {
+      "id": "osess-72c8768ba4aa45a0",
+      "ownerId": "owner-env",
+      "username": "Advait",
+      "ip": "2409:4090:2012:1e02:6067:65d3:241d:a2b4",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/158.0.0.0 Safari/537.36",
+      "mfaVerified": true,
+      "issuedAt": "2026-11-26T08:43:33.482Z",
+      "expiresAt": "2026-11-26T20:43:33.482Z",
+      "revokedAt": "2026-11-26T08:46:44.171Z"
+    }
+  ],
   "organizations": [
     {
       "id": "SALAR-ORG-00001",
@@ -32,7 +44,9 @@
       "licenseId": "lic-001",
       "status": "ACTIVE",
       "createdAt": "2026-11-26T06:45:18.502Z",
-      "updatedAt": "2026-11-26T06:45:18.502Z"
+      "updatedAt": "2026-11-26T06:45:18.502Z",
+      "previousPortalSlugs": [],
+      "databaseId": "salar_tenant_001"
     }
   ],
   "organizationUsers": [
@@ -60,7 +74,8 @@
       "questionCount": 0,
       "storageUsedMb": 12,
       "createdAt": "2026-11-26T06:45:18.502Z",
-      "updatedAt": "2026-11-26T06:45:18.502Z"
+      "updatedAt": "2026-11-26T06:45:18.502Z",
+      "databaseId": "salar_tenant_001"
     }
   ],
   "tenantDomains": [
@@ -417,6 +432,30 @@
   ],
   "auditLogs": [
     {
+      "id": "audit-1795682804171-6bd951",
+      "timestamp": "2026-11-26T08:46:44.171Z",
+      "actor": "Advait",
+      "actorType": "OWNER",
+      "action": "OWNER_LOGOUT",
+      "resourceType": "OwnerSession",
+      "resourceId": "osess-72c8768ba4aa45a0",
+      "ip": "2409:4090:2012:1e02:6067:65d3:241d:a2b4",
+      "details": "Owner signed out and revoked session cookie.",
+      "status": "SUCCESS"
+    },
+    {
+      "id": "audit-1795682613482-801a12",
+      "timestamp": "2026-11-26T08:43:33.482Z",
+      "actor": "Advait",
+      "actorType": "OWNER",
+      "action": "OWNER_LOGIN_SUCCESS",
+      "resourceType": "OwnerSession",
+      "resourceId": "osess-72c8768ba4aa45a0",
+      "ip": "2409:4090:2012:1e02:6067:65d3:241d:a2b4",
+      "details": "Authenticated with Password.",
+      "status": "SUCCESS"
+    },
+    {
       "id": "audit-001",
       "actor": "SYSTEM_BOOTSTRAP",
       "actorType": "SYSTEM",
@@ -472,6 +511,7 @@
   "counters": {
     "orgSeq": 1,
     "allocSeq": 3,
-    "invoiceSeq": 1
+    "invoiceSeq": 1,
+    "dbSeq": 1
   }
 }

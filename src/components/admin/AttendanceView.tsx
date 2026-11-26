@@ -4,9 +4,11 @@ import { CalendarCheck, Check, Download, Search, X } from 'lucide-react';
 import { db } from '../../lib/firebase';
 import { handleFirestoreError, OperationType } from '../../lib/firestoreError';
 import { exportToCsv } from '../../lib/portalService';
+import { useAuth } from '../../context/AuthContext';
 import type { AttendanceRecord, Batch, StudentProfile } from '../../types/portal';
 
 export const AttendanceView: React.FC = () => {
+  const { tenantContext } = useAuth();
   const [batches, setBatches] = useState<Batch[]>([]);
   const [students, setStudents] = useState<StudentProfile[]>([]);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
@@ -92,8 +94,9 @@ export const AttendanceView: React.FC = () => {
   };
 
   const handleExport = () => {
+    const fileSlug = (tenantContext?.portalSlug || 'institute').replace(/[^a-z0-9-_]/gi, '-').toLowerCase();
     exportToCsv(
-      `gurukul-attendance-${selectedDate}.csv`,
+      `${fileSlug}-attendance-${selectedDate}.csv`,
       ['Date', 'Batch', 'Student Name', 'Roll Number', 'Status'],
       visibleStudents.map((s) => [
         selectedDate,

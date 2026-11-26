@@ -95,19 +95,24 @@ function parseCookies(cookieHeader?: string): Record<string, string> {
   return out;
 }
 
-function setAdminSessionCookie(res: Response, token: string) {
-  const maxAgeSec = Math.floor(ADMIN_SESSION_TTL_MS / 1000);
-  res.setHeader(
-    'Set-Cookie',
-    `${ADMIN_COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; Max-Age=${maxAgeSec}; HttpOnly; Secure; SameSite=None; Partitioned`
-  );
+function isSecureRequest(req: Request): boolean {
+  const xfProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase();
+  return req.secure || xfProto === 'https' || process.env.VERCEL === '1';
 }
 
-function clearAdminSessionCookie(res: Response) {
-  res.setHeader(
-    'Set-Cookie',
-    `${ADMIN_COOKIE_NAME}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=None; Partitioned`
-  );
+function setAdminSessionCookie(req: Request, res: Response, token: string) {
+  const maxAgeSec = Math.floor(ADMIN_SESSION_TTL_MS / 1000);
+  const attrs = isSecureRequest(req)
+    ? 'HttpOnly; Secure; SameSite=None; Partitioned'
+    : 'HttpOnly; SameSite=Lax';
+  res.setHeader('Set-Cookie', `${ADMIN_COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; Max-Age=${maxAgeSec}; ${attrs}`);
+}
+
+function clearAdminSessionCookie(req: Request, res: Response) {
+  const attrs = isSecureRequest(req)
+    ? 'HttpOnly; Secure; SameSite=None; Partitioned'
+    : 'HttpOnly; SameSite=Lax';
+  res.setHeader('Set-Cookie', `${ADMIN_COOKIE_NAME}=; Path=/; Max-Age=0; ${attrs}`);
 }
 
 function verifyCsrfRequest(req: Request): boolean {
@@ -176,6 +181,11 @@ export function createApiApp(): Express {
   app.use(telemetryMiddleware);
 
   // Admin Gate Auth Endpoints
+  app.use('/api/auth/admin', (_req: Request, res: Response, next: NextFunction) => {
+    res.setHeader('Cache-Control', 'no-store, max-age=0');
+    next();
+  });
+
   app.get('/api/auth/admin/status', (_req: Request, res: Response) => {
     const hasEnvPasscode = Boolean(process.env.ADMIN_PASSCODE && process.env.ADMIN_PASSCODE.trim().length > 0);
     const claimed = readClaimedAdminCred();
@@ -231,7 +241,7 @@ export function createApiApp(): Express {
       sub: 'admin-gate',
       exp: Date.now() + ADMIN_SESSION_TTL_MS,
     });
-    setAdminSessionCookie(res, token);
+    setAdminSessionCookie(req, res, token);
     res.json({ ok: true, token });
   });
 
@@ -259,7 +269,7 @@ export function createApiApp(): Express {
         sub: 'admin-gate',
         exp: Date.now() + ADMIN_SESSION_TTL_MS,
       });
-      setAdminSessionCookie(res, token);
+      setAdminSessionCookie(req, res, token);
       res.json({ ok: true, token });
       return;
     }
@@ -280,7 +290,7 @@ export function createApiApp(): Express {
       sub: 'admin-gate',
       exp: Date.now() + ADMIN_SESSION_TTL_MS,
     });
-    setAdminSessionCookie(res, token);
+    setAdminSessionCookie(req, res, token);
     res.json({ ok: true, token });
   });
 
@@ -289,7 +299,7 @@ export function createApiApp(): Express {
       res.status(403).json({ error: 'Forbidden: Invalid request origin.' });
       return;
     }
-    clearAdminSessionCookie(res);
+    clearAdminSessionCookie(req, res);
     res.json({ ok: true });
   });
 
@@ -376,6 +386,39 @@ export function createApiApp(): Express {
     const asAttachment = req.query.download === '1';
     res.setHeader('Content-Disposition', `${asAttachment ? 'attachment' : 'inline'}; filename="${safeName}"`);
     fs.createReadStream(resolvedPath).pipe(res);
+  });
+
+  app.get('/api/public/starter-formula-sheet', (req: Request, res: Response) => {
+    const content = [
+      'CALCULUS & ALGEBRA — QUICK REVISION FORMULA COMPENDIUM',
+      '======================================================',
+      '',
+      '1. STANDARD LIMITS',
+      '   - lim(x->0) sin(x)/x = 1',
+      '   - lim(x->0) (1 - cos(ax))/x^2 = a^2 / 2',
+      '   - lim(x->0) (e^x - 1)/x = 1',
+      '',
+      '2. DEFINITE INTEGRATION PROPERTIES',
+      '   - King Property: int_a^b f(x) dx = int_a^b f(a + b - x) dx',
+      '   - Queen Property: int_0^(2a) f(x) dx = 2 * int_0^a f(x) dx if f(2a - x) = f(x)',
+      '',
+      '3. MATRICES & DETERMINANTS (ORDER n)',
+      '   - |adj(A)| = |A|^(n-1)',
+      '   - |kA| = k^n * |A|',
+      '   - |A^(-1)| = 1 / |A|',
+      '',
+      '4. QUADRATIC EQUATIONS (ax^2 + bx + c = 0)',
+      '   - alpha + beta = -b/a,  alpha * beta = c/a',
+      '   - alpha^2 + beta^2 = (alpha + beta)^2 - 2*alpha*beta',
+      '',
+    ].join('\n');
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    const asAttachment = req.query.download === '1';
+    res.setHeader(
+      'Content-Disposition',
+      `${asAttachment ? 'attachment' : 'inline'}; filename="Formula-Compendium.txt"`
+    );
+    res.send(content);
   });
 
   // Mathematical OCR Extraction Endpoint (@google/genai Server-Side)

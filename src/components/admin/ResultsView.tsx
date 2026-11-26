@@ -15,10 +15,12 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import { db } from '../../lib/firebase';
 import { handleFirestoreError, OperationType } from '../../lib/firestoreError';
 import { exportToCsv } from '../../lib/portalService';
+import { useAuth } from '../../context/AuthContext';
 import { MathText } from '../MathText';
 import type { Exam, ExamAttempt } from '../../types/portal';
 
 export const ResultsView: React.FC = () => {
+  const { tenantContext } = useAuth();
   const [attempts, setAttempts] = useState<ExamAttempt[]>([]);
   const [exams, setExams] = useState<Exam[]>([]);
   const [loading, setLoading] = useState(true);
@@ -156,8 +158,9 @@ export const ResultsView: React.FC = () => {
   };
 
   const handleExportCsv = () => {
+    const fileSlug = (tenantContext?.portalSlug || 'institute').replace(/[^a-z0-9-_]/gi, '-').toLowerCase();
     exportToCsv(
-      `gurukul-results-${new Date().toISOString().slice(0, 10)}.csv`,
+      `${fileSlug}-results-${new Date().toISOString().slice(0, 10)}.csv`,
       [
         'Rank',
         'Student Name',

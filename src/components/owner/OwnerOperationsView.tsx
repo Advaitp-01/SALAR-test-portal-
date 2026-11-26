@@ -11,6 +11,7 @@ interface OwnerOperationsViewProps {
 
 export const OwnerOperationsView: React.FC<OwnerOperationsViewProps> = ({ mode, data, onRefresh }) => {
   const [auditSearch, setAuditSearch] = useState('');
+  const [auditCategory, setAuditCategory] = useState<'ALL' | 'AUTH' | 'CLIENTS' | 'FAILED'>('ALL');
   const [settingsForm, setSettingsForm] = useState<SystemSettings>(data.systemSettings);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
@@ -119,37 +120,83 @@ export const OwnerOperationsView: React.FC<OwnerOperationsViewProps> = ({ mode, 
 
   if (mode === 'audit-logs') {
     const filtered = data.auditLogs.filter((l) => {
+      if (auditCategory === 'AUTH') {
+        const isAuth =
+          l.action.includes('LOGIN') ||
+          l.action.includes('OWNER_') ||
+          l.action.includes('MFA') ||
+          l.action.includes('SESSION') ||
+          l.resourceType === 'OwnerSession' ||
+          l.resourceType === 'OwnerUser';
+        if (!isAuth) return false;
+      } else if (auditCategory === 'CLIENTS') {
+        const isClient =
+          l.action.includes('ORG') ||
+          l.action.includes('LICENSE') ||
+          l.action.includes('DOMAIN') ||
+          l.action.includes('ALLOCATION') ||
+          l.action.includes('PAYMENT');
+        if (!isClient) return false;
+      } else if (auditCategory === 'FAILED') {
+        if (l.status === 'SUCCESS') return false;
+      }
       const q = auditSearch.trim().toLowerCase();
       if (!q) return true;
       return (
         l.action.toLowerCase().includes(q) ||
         l.actor.toLowerCase().includes(q) ||
         l.resourceId.toLowerCase().includes(q) ||
-        l.details.toLowerCase().includes(q)
+        l.details.toLowerCase().includes(q) ||
+        l.ip.toLowerCase().includes(q)
       );
     });
 
     return (
       <div className="space-y-4">
-        <div className="bg-white border border-[#E2E8F0] rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="relative flex-1 max-w-md">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={auditSearch}
-              onChange={(e) => setAuditSearch(e.target.value)}
-              placeholder="Filter audit logs by action, actor, resource, IP..."
-              className="w-full pl-9 pr-3 py-2 text-sm border border-[#E2E8F0] rounded-lg"
-            />
+        <div className="bg-white border border-[#E2E8F0] rounded-xl p-4 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="relative flex-1 max-w-md">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={auditSearch}
+                onChange={(e) => setAuditSearch(e.target.value)}
+                placeholder="Filter audit logs by action, actor, resource, IP..."
+                className="w-full pl-9 pr-3 py-2 text-sm border border-[#E2E8F0] rounded-lg"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={handleExportAuditCsv}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold border border-[#E2E8F0] rounded-lg hover:bg-slate-50 self-start sm:self-auto"
+            >
+              <Download className="w-3.5 h-3.5 text-[#0032A0]" />
+              Export CSV
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={handleExportAuditCsv}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold border border-[#E2E8F0] rounded-lg hover:bg-slate-50"
-          >
-            <Download className="w-3.5 h-3.5 text-[#0032A0]" />
-            Export CSV
-          </button>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {(
+              [
+                { id: 'ALL', label: 'All Logs' },
+                { id: 'AUTH', label: 'Owner Logins & Auth' },
+                { id: 'CLIENTS', label: 'Client & License Events' },
+                { id: 'FAILED', label: 'Failed / Denied' },
+              ] as const
+            ).map((pill) => (
+              <button
+                key={pill.id}
+                type="button"
+                onClick={() => setAuditCategory(pill.id)}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors ${
+                  auditCategory === pill.id
+                    ? 'bg-[#0032A0] text-white border-[#0032A0]'
+                    : 'bg-slate-50 text-slate-600 border-[#E2E8F0] hover:bg-slate-100'
+                }`}
+              >
+                {pill.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="bg-white border border-[#E2E8F0] rounded-xl overflow-hidden">

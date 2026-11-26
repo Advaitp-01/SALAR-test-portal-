@@ -42,6 +42,7 @@ import {
   toggleExamStatus,
   uploadFileToServer,
 } from '../../lib/portalService';
+import { useAuth } from '../../context/AuthContext';
 import { CBTExamInterface } from '../CBTExamInterface';
 import { MathText } from '../MathText';
 import type {
@@ -115,8 +116,9 @@ const QUESTION_SUBJECT_OPTIONS = [
   'Combined PCMB',
 ];
 
-function generateExamCode(): string {
-  return `GC-${1000 + Math.floor(Math.random() * 8999)}`;
+function generateExamCode(prefix = 'EX'): string {
+  const clean = prefix.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 4) || 'EX';
+  return `${clean}-${1000 + Math.floor(Math.random() * 8999)}`;
 }
 
 function getPresetMarksFromExam(ex?: Exam | null): { pos: number; neg: number } {
@@ -127,6 +129,18 @@ function getPresetMarksFromExam(ex?: Exam | null): { pos: number; neg: number } 
 }
 
 export const ExamsView: React.FC = () => {
+  const { tenantContext, settings } = useAuth();
+  const examCodePrefix =
+    tenantContext?.portalPath === '/'
+      ? 'GC'
+      : (tenantContext?.instituteName || settings.instituteName || 'EX')
+          .split(/\s+/)
+          .map((w) => w[0] || '')
+          .join('')
+          .slice(0, 3)
+          .toUpperCase() || 'EX';
+  const portalBase =
+    tenantContext?.portalPath && tenantContext.portalPath !== '/' ? tenantContext.portalPath : '';
   const [exams, setExams] = useState<Exam[]>([]);
   const [bankQuestions, setBankQuestions] = useState<Question[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
@@ -163,7 +177,7 @@ export const ExamsView: React.FC = () => {
   // Exam Folder Form State
   const [folderName, setFolderName] = useState('');
   const [title, setTitle] = useState('');
-  const [code, setCode] = useState(generateExamCode);
+  const [code, setCode] = useState(() => generateExamCode(examCodePrefix));
   const [classLevel, setClassLevel] = useState<'Class 11th' | 'Class 12th' | 'All Classes'>('Class 11th');
   const [selectedPresetLabel, setSelectedPresetLabel] = useState('JEE Mains (+4/-1)');
   const [target, setTarget] = useState<Exam['target']>('JEE Main');
@@ -385,7 +399,7 @@ export const ExamsView: React.FC = () => {
     setSelectedBankIds([]);
     setFolderName(presetFolder || '');
     setTitle('');
-    setCode(generateExamCode());
+    setCode(generateExamCode(examCodePrefix));
     setClassLevel('Class 11th');
     setSelectedPresetLabel('JEE Mains (+4/-1)');
     setTarget('JEE Main');
@@ -543,7 +557,7 @@ export const ExamsView: React.FC = () => {
       if (createMode === 'copy' && sourceExamId) {
         const src = exams.find((x) => x.id === sourceExamId);
         if (src) {
-          const newId = await cloneExamIsolated(src, title.trim(), code.trim() || generateExamCode());
+          const newId = await cloneExamIsolated(src, title.trim(), code.trim() || generateExamCode(examCodePrefix));
           if (publishImmediate) {
             await toggleExamStatus(newId, 'LIVE');
           }
@@ -555,7 +569,7 @@ export const ExamsView: React.FC = () => {
       }
 
       const initialStatus: 'LIVE' | 'DRAFT' = publishImmediate ? 'LIVE' : 'DRAFT';
-      const generatedCode = code.trim() || generateExamCode();
+      const generatedCode = code.trim() || generateExamCode(examCodePrefix);
 
       const payload: Omit<Exam, 'id'> = {
         title: title.trim(),
@@ -853,17 +867,21 @@ export const ExamsView: React.FC = () => {
   };
 
   const copyExamLink = (ex: Exam) => {
-    navigator.clipboard.writeText(`${window.location.origin}/?exam=${ex.id}`).catch(() => {});
+    navigator.clipboard.writeText(`${window.location.origin}${portalBase}/?exam=${ex.id}`).catch(() => {});
     setCopiedId(ex.id);
     pushToast(`Exam CBT link copied for "${ex.title}".`);
     setTimeout(() => setCopiedId(null), 2000);
   };
 
   const shareExamLink = async (ex: Exam) => {
-    const url = `${window.location.origin}/?exam=${ex.id}`;
+    const url = `${window.location.origin}${portalBase}/?exam=${ex.id}`;
     if (navigator.share) {
       try {
-        await navigator.share({ title: ex.title, text: `CBT Exam ${ex.code}`, url });
+        await navigator.share({
+          title: ex.title,
+          text: `${settings.instituteName} · CBT Exam ${ex.code}`,
+          url,
+        });
         return;
       } catch {
         // Fallback to clipboard copy

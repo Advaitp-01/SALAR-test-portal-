@@ -8,7 +8,7 @@ import { MathText } from '../MathText';
 import type { EvaluationLog, ExamAttempt, QuestionResultItem } from '../../types/portal';
 
 export const EvaluationView: React.FC = () => {
-  const { firebaseUser } = useAuth();
+  const { firebaseUser, tenantContext, settings } = useAuth();
   const [attempts, setAttempts] = useState<ExamAttempt[]>([]);
   const [logs, setLogs] = useState<EvaluationLog[]>([]);
   const [search, setSearch] = useState('');
@@ -147,7 +147,7 @@ export const EvaluationView: React.FC = () => {
         newScore,
         adjustmentDelta: delta,
         reason: reason.trim(),
-        evaluatorEmail: firebaseUser?.email || 'super-admin@gurukul.local',
+        evaluatorEmail: firebaseUser?.email || tenantContext?.email || settings.email || 'admin@institute.local',
         createdAt: now,
       });
 

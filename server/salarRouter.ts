@@ -32,6 +32,7 @@ import {
   authenticateTenantStudent,
   ensureTenantStore,
   exportTenantRuntimeSnapshot,
+  getTenantRuntimeMetrics,
   getTenantStudentByUid,
   isAllowedTenantCollectionPath,
   isTenantAdminClaimed,
@@ -281,19 +282,24 @@ function verifyOwnerJwt(token: string): { sid: string; username: string; exp: nu
   }
 }
 
-function setOwnerCookie(res: Response, token: string, ttlHours: number) {
-  const maxAge = Math.max(3600, ttlHours * 3600);
-  res.setHeader(
-    'Set-Cookie',
-    `${OWNER_COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=None; Partitioned`
-  );
+function isSecureRequest(req: Request): boolean {
+  const xfProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase();
+  return req.secure || xfProto === 'https' || process.env.VERCEL === '1';
 }
 
-function clearOwnerCookie(res: Response) {
-  res.setHeader(
-    'Set-Cookie',
-    `${OWNER_COOKIE_NAME}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=None; Partitioned`
-  );
+function setOwnerCookie(req: Request, res: Response, token: string, ttlHours: number) {
+  const maxAge = Math.max(3600, ttlHours * 3600);
+  const attrs = isSecureRequest(req)
+    ? 'HttpOnly; Secure; SameSite=None; Partitioned'
+    : 'HttpOnly; SameSite=Lax';
+  res.setHeader('Set-Cookie', `${OWNER_COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; Max-Age=${maxAge}; ${attrs}`);
+}
+
+function clearOwnerCookie(req: Request, res: Response) {
+  const attrs = isSecureRequest(req)
+    ? 'HttpOnly; Secure; SameSite=None; Partitioned'
+    : 'HttpOnly; SameSite=Lax';
+  res.setHeader('Set-Cookie', `${OWNER_COOKIE_NAME}=; Path=/; Max-Age=0; ${attrs}`);
 }
 
 interface AuthenticatedOwnerRequest extends Request {
@@ -305,7 +311,7 @@ function resolveOwnerSessionFromRequest(req: Request): { sid: string; username: 
   const auth = req.headers.authorization;
   let token: string | null = null;
   if (auth && auth.startsWith('Bearer ')) token = auth.slice(7).trim();
-  else {
+  if (!token) {
     const cookies = parseCookies(req.headers.cookie);
     token = cookies[OWNER_COOKIE_NAME] || null;
   }
@@ -313,8 +319,16 @@ function resolveOwnerSessionFromRequest(req: Request): { sid: string; username: 
   const decoded = verifyOwnerJwt(token);
   if (!decoded) return null;
   const db = readSalarDb();
-  const sess = db.ownerSessions.find((s) => s.id === decoded.sid && !s.revokedAt);
-  if (!sess || new Date(sess.expiresAt).getTime() < Date.now()) return null;
+  const sess = db.ownerSessions.find((s) => s.id === decoded.sid);
+  if (sess) {
+    if (sess.revokedAt || new Date(sess.expiresAt).getTime() < Date.now()) {
+      return null;
+    }
+    return { sid: decoded.sid, username: decoded.username };
+  }
+  // In serverless multi-instance environments (e.g. Vercel /tmp isolation),
+  // a valid HMAC-signed unexpired session token created on another Lambda instance
+  // must remain valid as long as it has not been explicitly revoked in this store.
   return { sid: decoded.sid, username: decoded.username };
 }
 
@@ -444,18 +458,19 @@ export function createSalarRouter(): express.Router {
     let org = orgParam ? db.organizations.find((o) => o.id.toLowerCase() === orgParam.toLowerCase()) : undefined;
 
     if (!org && slugParam) {
+      const normalizedSlug = slugParam === 'test' ? 'salar-test' : slugParam;
       org = db.organizations.find(
         (o) =>
-          o.portalSlug.toLowerCase() === slugParam ||
-          o.id.toLowerCase() === slugParam ||
-          o.shortCode.toLowerCase() === slugParam
+          o.portalSlug.toLowerCase() === normalizedSlug ||
+          o.id.toLowerCase() === normalizedSlug ||
+          o.shortCode.toLowerCase() === normalizedSlug
       );
       if (!org) {
         const redirectedOrg = db.organizations.find(
           (o) =>
             o.status !== 'ARCHIVED' &&
             Array.isArray(o.previousPortalSlugs) &&
-            o.previousPortalSlugs.some((prev) => prev.toLowerCase() === slugParam)
+            o.previousPortalSlugs.some((prev) => prev.toLowerCase() === normalizedSlug)
         );
         if (redirectedOrg) {
           org = redirectedOrg;
@@ -706,6 +721,11 @@ export function createSalarRouter(): express.Router {
   // =========================================================================
   // 2. OWNER AUTHENTICATION (/api/owner/auth/*)
   // =========================================================================
+  router.use('/owner', (_req: Request, res: Response, next: NextFunction) => {
+    res.setHeader('Cache-Control', 'no-store, max-age=0');
+    next();
+  });
+
   router.get('/owner/auth/status', (_req: Request, res: Response) => {
     const db = readSalarDb();
     const hasEnvOwner = Boolean(process.env.OWNER_USERNAME?.trim() && process.env.OWNER_PASSWORD?.trim());
@@ -798,8 +818,9 @@ export function createSalarRouter(): express.Router {
     writeSalarDb(db);
 
     const token = signOwnerJwt({ sid: sessionId, username, exp: expMs });
-    setOwnerCookie(res, token, ttlHours);
-    res.json({ ok: true, username, role: 'PLATFORM_OWNER' });
+    setOwnerCookie(req, res, token, ttlHours);
+    console.info(`[OWNER_AUTH] OWNER_ACCOUNT_CLAIMED user=${username} ip=${getClientIp(req)}`);
+    res.json({ ok: true, username, role: 'PLATFORM_OWNER', token });
   });
 
   router.post('/owner/auth/login', (req: Request, res: Response) => {
@@ -936,8 +957,9 @@ export function createSalarRouter(): express.Router {
     writeSalarDb(db);
 
     const token = signOwnerJwt({ sid: sessionId, username: matchedUsername, exp: expMs });
-    setOwnerCookie(res, token, ttlHours);
-    res.json({ ok: true, username: matchedUsername, role: 'PLATFORM_OWNER' });
+    setOwnerCookie(req, res, token, ttlHours);
+    console.info(`[OWNER_AUTH] OWNER_LOGIN_SUCCESS user=${matchedUsername} ip=${ip}`);
+    res.json({ ok: true, username: matchedUsername, role: 'PLATFORM_OWNER', token });
   });
 
   router.post('/owner/auth/logout', (req: AuthenticatedOwnerRequest, res: Response) => {
@@ -962,7 +984,7 @@ export function createSalarRouter(): express.Router {
       });
       writeSalarDb(db);
     }
-    clearOwnerCookie(res);
+    clearOwnerCookie(req, res);
     res.json({ ok: true });
   });
 
@@ -1000,10 +1022,25 @@ export function createSalarRouter(): express.Router {
     const pendingInvoices = db.subscriptionInvoices.filter((i) => i.status === 'PENDING' || i.status === 'OVERDUE');
     const pendingPaymentsTotal = pendingInvoices.reduce((acc, i) => acc + i.totalAmount, 0);
 
-    const totalStudentsAcrossClients = db.tenants
+    const liveTenants = db.tenants.map((t) => {
+      if (t.id === 'tenant-gurukul-001' || t.organizationId === 'SALAR-ORG-00001') {
+        return t;
+      }
+      const m = getTenantRuntimeMetrics(t.id);
+      return {
+        ...t,
+        studentCount: m.studentCount,
+        examCount: m.examCount,
+        questionCount: m.questionCount,
+        storageUsedMb: m.storageUsedMb || t.storageUsedMb,
+      };
+    });
+    db.tenants = liveTenants;
+
+    const totalStudentsAcrossClients = liveTenants
       .filter((t) => t.status === 'ACTIVE')
       .reduce((acc, t) => acc + (t.studentCount || 0), 0);
-    const totalExamsAcrossClients = db.tenants
+    const totalExamsAcrossClients = liveTenants
       .filter((t) => t.status === 'ACTIVE')
       .reduce((acc, t) => acc + (t.examCount || 0), 0);
 
@@ -3579,19 +3616,24 @@ export function createSalarRouter(): express.Router {
     return `salar_t_${kind}_${safe}`;
   }
 
-  function setTenantCookie(res: Response, orgId: string, kind: 'admin' | 'student', token: string) {
+  router.use('/tenant', (_req: Request, res: Response, next: NextFunction) => {
+    res.setHeader('Cache-Control', 'no-store, max-age=0');
+    next();
+  });
+
+  function setTenantCookie(req: Request, res: Response, orgId: string, kind: 'admin' | 'student', token: string) {
     const maxAge = 30 * 24 * 60 * 60;
-    res.setHeader(
-      'Set-Cookie',
-      `${tenantCookieName(orgId, kind)}=${encodeURIComponent(token)}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=None; Partitioned`
-    );
+    const attrs = isSecureRequest(req)
+      ? 'HttpOnly; Secure; SameSite=None; Partitioned'
+      : 'HttpOnly; SameSite=Lax';
+    res.setHeader('Set-Cookie', `${tenantCookieName(orgId, kind)}=${encodeURIComponent(token)}; Path=/; Max-Age=${maxAge}; ${attrs}`);
   }
 
-  function clearTenantCookie(res: Response, orgId: string, kind: 'admin' | 'student') {
-    res.setHeader(
-      'Set-Cookie',
-      `${tenantCookieName(orgId, kind)}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=None; Partitioned`
-    );
+  function clearTenantCookie(req: Request, res: Response, orgId: string, kind: 'admin' | 'student') {
+    const attrs = isSecureRequest(req)
+      ? 'HttpOnly; Secure; SameSite=None; Partitioned'
+      : 'HttpOnly; SameSite=Lax';
+    res.setHeader('Set-Cookie', `${tenantCookieName(orgId, kind)}=; Path=/; Max-Age=0; ${attrs}`);
   }
 
   function resolveSecondaryOrg(orgId: string): { org: Organization; blocked: boolean; blockReason?: string } | null {
@@ -3618,6 +3660,13 @@ export function createSalarRouter(): express.Router {
     uid: string;
     email: string;
   } {
+    const auth = req.headers.authorization;
+    if (auth && auth.startsWith('Bearer ')) {
+      const p = verifyTenantSessionToken(auth.slice(7).trim());
+      if (p && p.orgId === org.id && p.tenantId === org.tenantId) {
+        return { role: p.role, uid: p.uid, email: p.email };
+      }
+    }
     const cookies = parseCookies(req.headers.cookie);
     const adminToken = cookies[tenantCookieName(org.id, 'admin')];
     if (adminToken) {
@@ -3711,7 +3760,7 @@ export function createSalarRouter(): express.Router {
       email: adminEmail || resolved.org.email,
       exp: Date.now() + 30 * 24 * 60 * 60 * 1000,
     });
-    setTenantCookie(res, resolved.org.id, 'admin', token);
+    setTenantCookie(req, res, resolved.org.id, 'admin', token);
     res.json({ ok: true, token, role: 'SUPER_ADMIN' });
   });
 
@@ -3765,7 +3814,7 @@ export function createSalarRouter(): express.Router {
       email: adminEmail || resolved.org.email,
       exp: Date.now() + 30 * 24 * 60 * 60 * 1000,
     });
-    setTenantCookie(res, resolved.org.id, 'admin', token);
+    setTenantCookie(req, res, resolved.org.id, 'admin', token);
     res.json({ ok: true, token, role: 'SUPER_ADMIN' });
   });
 
@@ -3774,7 +3823,7 @@ export function createSalarRouter(): express.Router {
       res.status(403).json({ error: 'Forbidden: Invalid request origin.' });
       return;
     }
-    clearTenantCookie(res, String(req.params.orgId || ''), 'admin');
+    clearTenantCookie(req, res, String(req.params.orgId || ''), 'admin');
     res.json({ ok: true });
   });
 
@@ -3838,8 +3887,8 @@ export function createSalarRouter(): express.Router {
         email,
         exp: Date.now() + 30 * 24 * 60 * 60 * 1000,
       });
-      setTenantCookie(res, resolved.org.id, 'student', token);
-      res.status(201).json({ ok: true, student });
+      setTenantCookie(req, res, resolved.org.id, 'student', token);
+      res.status(201).json({ ok: true, token, student });
     } catch (err) {
       res.status(409).json({ error: err instanceof Error ? err.message : 'Registration failed.' });
     }
@@ -3874,8 +3923,8 @@ export function createSalarRouter(): express.Router {
       email,
       exp: Date.now() + 30 * 24 * 60 * 60 * 1000,
     });
-    setTenantCookie(res, resolved.org.id, 'student', token);
-    res.json({ ok: true, student: found.student });
+    setTenantCookie(req, res, resolved.org.id, 'student', token);
+    res.json({ ok: true, token, student: found.student });
   });
 
   router.post('/tenant/:orgId/auth/student/logout', (req: Request, res: Response) => {
@@ -3883,7 +3932,7 @@ export function createSalarRouter(): express.Router {
       res.status(403).json({ error: 'Forbidden: Invalid request origin.' });
       return;
     }
-    clearTenantCookie(res, String(req.params.orgId || ''), 'student');
+    clearTenantCookie(req, res, String(req.params.orgId || ''), 'student');
     res.json({ ok: true });
   });
 
@@ -3910,6 +3959,16 @@ export function createSalarRouter(): express.Router {
     return false;
   }
 
+  const STUDENT_SELF_UPDATE_FIELDS = new Set([
+    'name',
+    'mobile',
+    'whatsapp',
+    'photoUrl',
+    'classLevel',
+    'targetExam',
+    'updatedAt',
+  ]);
+
   function canWriteTenantDoc(
     role: 'SUPER_ADMIN' | 'STUDENT' | 'PUBLIC',
     uid: string,
@@ -3922,7 +3981,8 @@ export function createSalarRouter(): express.Router {
     if (role !== 'STUDENT') return false;
     if (op === 'delete') return false;
     if (colPath === 'students') {
-      return Boolean(existing && existing.uid === uid);
+      if (!existing || existing.uid !== uid) return false;
+      return Object.keys(data).every((k) => STUDENT_SELF_UPDATE_FIELDS.has(k));
     }
     if (colPath === 'examAttempts') {
       if (op === 'set' || op === 'add') return data.studentUid === uid && data.status === 'IN_PROGRESS';

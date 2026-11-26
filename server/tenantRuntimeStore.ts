@@ -70,9 +70,17 @@ function getTenantDbPath(tenantId: string): string {
   return resolved;
 }
 
+function getOrgShortCode(org: Organization): string {
+  return (org.shortCode || org.instituteName || 'ORG')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .slice(0, 4) || 'ORG';
+}
+
 function createInitialTenantSettings(org: Organization): Record<string, unknown> {
   const now = new Date().toISOString();
   const addressParts = [org.address, org.city, org.state, org.country].filter(Boolean).join(', ');
+  const slugHandle = (org.portalSlug || getOrgShortCode(org).toLowerCase()).replace(/[^a-z0-9]/gi, '').slice(0, 24) || 'institute';
   return {
     instituteName: org.instituteName,
     tagline: 'Online Computer-Based Testing & Academic Portal',
@@ -106,7 +114,7 @@ function createInitialTenantSettings(org: Organization): Record<string, unknown>
       allowPublicRegistration: true,
       autoSubmitOnExpiry: true,
       strictNegativeMarking: true,
-      upiId: '',
+      upiId: `${slugHandle}@upi`,
       upiPayeeName: org.instituteName,
       bankDetails: 'Bank Transfer / UPI verification via 12-digit UTR reference number.',
       storageProvider: `SALAR Isolated Vault (${org.tenantId})`,
@@ -116,6 +124,350 @@ function createInitialTenantSettings(org: Organization): Record<string, unknown>
     },
     updatedAt: now,
   };
+}
+
+function seedStarterExamWorkspace(org: Organization, store: TenantRuntimeDatabase): void {
+  if (org.id === 'SALAR-ORG-00001') return;
+
+  const now = new Date().toISOString();
+  const today = now.slice(0, 10);
+  const short = getOrgShortCode(org);
+  const leadName = org.contactPerson || 'Academic Director';
+
+  const batch1Id = `batch_${short.toLowerCase()}_12`;
+  const batch2Id = `batch_${short.toLowerCase()}_11`;
+  const faculty1Id = `fac_${short.toLowerCase()}_01`;
+  const folder1Id = `fld_${short.toLowerCase()}_01`;
+  const examLiveId = `ex_${short.toLowerCase()}_mock01`;
+  const examDraftId = `ex_${short.toLowerCase()}_prac02`;
+  const course1Id = `crs_${short.toLowerCase()}_01`;
+  const series1Id = `ts_${short.toLowerCase()}_01`;
+  const material1Id = `mat_${short.toLowerCase()}_01`;
+  const notif1Id = `ntf_${short.toLowerCase()}_01`;
+
+  store.collections.batches = {
+    [batch1Id]: {
+      name: `${short} Target JEE 2026 (Class 12th)`,
+      classLevel: 'Class 12th',
+      academicYear: '2025-26',
+      schedule: 'Mon–Sat · 07:30 AM – 09:30 AM',
+      capacity: 150,
+      facultyName: leadName,
+      assignedExamIds: [examLiveId],
+      studentCount: 0,
+      status: 'ACTIVE',
+      createdAt: now,
+      updatedAt: now,
+    },
+    [batch2Id]: {
+      name: `${short} Foundation Batch (Class 11th)`,
+      classLevel: 'Class 11th',
+      academicYear: '2025-26',
+      schedule: 'Mon–Sat · 04:00 PM – 06:00 PM',
+      capacity: 150,
+      facultyName: leadName,
+      assignedExamIds: [],
+      studentCount: 0,
+      status: 'ACTIVE',
+      createdAt: now,
+      updatedAt: now,
+    },
+  };
+
+  store.collections.faculty = {
+    [faculty1Id]: {
+      name: leadName,
+      qualification: 'Senior Faculty & Academic Lead',
+      subjectSpecialization: 'Mathematics, Calculus & Competitive Exam Prep',
+      experience: '10+ Years',
+      email: org.email || `faculty@${org.portalSlug || 'institute'}.in`,
+      contactNumber: org.mobile || '',
+      photoUrl: '',
+      assignedBatches: [`${short} Target JEE 2026 (Class 12th)`],
+      status: 'ACTIVE',
+      createdAt: now,
+      updatedAt: now,
+    },
+  };
+
+  store.collections.questionFolders = {
+    [folder1Id]: {
+      name: `${short} Starter Question Bank (Calculus & Algebra)`,
+      classLevel: 'Class 12th',
+      chapter: 'Differential & Integral Calculus',
+      examCategory: 'JEE Main',
+      createdAt: now,
+    },
+  };
+
+  const starterQuestions: Array<{
+    id: string;
+    title: string;
+    questionText: string;
+    questionType: 'SINGLE_MCQ' | 'MULTI_MCQ' | 'NUMERICAL' | 'INTEGER';
+    options: Array<{ id: string; text: string }>;
+    correctAnswer: string;
+    explanation: string;
+    positiveMarks: number;
+    negativeMarks: number;
+    difficulty: 'EASY' | 'MEDIUM' | 'HARD';
+    classLevel: 'Class 11th' | 'Class 12th';
+    chapter: string;
+    topic: string;
+    examCategory: 'JEE Main' | 'JEE Advanced' | 'MHT-CET';
+  }> = [
+    {
+      id: `q_${short.toLowerCase()}_01`,
+      title: 'Definite Integral Symmetry Property',
+      questionText: 'Evaluate the definite integral: $$\\int_{0}^{\\pi/2} \\frac{\\sin x}{\\sin x + \\cos x}\\,dx$$',
+      questionType: 'SINGLE_MCQ',
+      options: [
+        { id: 'A', text: '$\\frac{\\pi}{4}$' },
+        { id: 'B', text: '$\\frac{\\pi}{2}$' },
+        { id: 'C', text: '$\\pi$' },
+        { id: 'D', text: '$0$' },
+      ],
+      correctAnswer: 'A',
+      explanation: 'Using King’s property $I = \\int_0^a f(a-x)\\,dx$, adding $I + I = \\int_0^{\\pi/2} 1\\,dx = \\frac{\\pi}{2}$, hence $I = \\frac{\\pi}{4}$.',
+      positiveMarks: 4,
+      negativeMarks: 1,
+      difficulty: 'EASY',
+      classLevel: 'Class 12th',
+      chapter: 'Definite Integration',
+      topic: 'Properties of Definite Integrals',
+      examCategory: 'JEE Main',
+    },
+    {
+      id: `q_${short.toLowerCase()}_02`,
+      title: 'Matrices & Determinant Invertibility',
+      questionText: 'Let $A$ be a $3 \\times 3$ non-singular square matrix such that $\\det(A) = 5$. Which of the following statements are correct?',
+      questionType: 'MULTI_MCQ',
+      options: [
+        { id: 'A', text: '$\\det(\\operatorname{adj} A) = 25$' },
+        { id: 'B', text: '$\\det(2A) = 40$' },
+        { id: 'C', text: '$\\det(A^{-1}) = 5$' },
+        { id: 'D', text: '$\\det(A^T) = 5$' },
+      ],
+      correctAnswer: 'A,B,D',
+      explanation: '$\\det(\\operatorname{adj} A) = |A|^{n-1} = 5^2 = 25$, $\\det(2A) = 2^3 |A| = 40$, and $\\det(A^T) = |A| = 5$.',
+      positiveMarks: 4,
+      negativeMarks: 1,
+      difficulty: 'MEDIUM',
+      classLevel: 'Class 12th',
+      chapter: 'Matrices & Determinants',
+      topic: 'Properties of Determinants',
+      examCategory: 'JEE Main',
+    },
+    {
+      id: `q_${short.toLowerCase()}_03`,
+      title: 'Standard Trigonometric Limit',
+      questionText: 'Find the numerical value of $\\lim_{x \\to 0} \\frac{1 - \\cos 4x}{x^2}$.',
+      questionType: 'NUMERICAL',
+      options: [],
+      correctAnswer: '8',
+      explanation: '$1 - \\cos 4x = 2\\sin^2(2x)$, so $\\lim_{x\\to 0} \\frac{2\\sin^2(2x)}{x^2} = 2 \\cdot 2^2 = 8$.',
+      positiveMarks: 4,
+      negativeMarks: 0,
+      difficulty: 'EASY',
+      classLevel: 'Class 11th',
+      chapter: 'Limits & Continuity',
+      topic: 'Trigonometric Limits',
+      examCategory: 'JEE Main',
+    },
+    {
+      id: `q_${short.toLowerCase()}_04`,
+      title: 'Quadratic Roots Sum of Squares',
+      questionText: 'If $\\alpha$ and $\\beta$ are roots of $x^2 - 5x + 6 = 0$, find the integer value of $\\alpha^2 + \\beta^2$.',
+      questionType: 'INTEGER',
+      options: [],
+      correctAnswer: '13',
+      explanation: '$\\alpha^2 + \\beta^2 = (\\alpha + \\beta)^2 - 2\\alpha\\beta = 25 - 12 = 13$.',
+      positiveMarks: 4,
+      negativeMarks: 0,
+      difficulty: 'EASY',
+      classLevel: 'Class 11th',
+      chapter: 'Quadratic Equations',
+      topic: 'Symmetric Functions of Roots',
+      examCategory: 'JEE Main',
+    },
+  ];
+
+  store.collections.questions = {};
+  const examQuestionsCol = `exams/${examLiveId}/questions`;
+  store.collections[examQuestionsCol] = {};
+
+  starterQuestions.forEach((q, idx) => {
+    store.collections.questions[q.id] = {
+      folderId: folder1Id,
+      folderName: `${short} Starter Question Bank (Calculus & Algebra)`,
+      title: q.title,
+      questionText: q.questionText,
+      questionImageUrl: '',
+      questionType: q.questionType,
+      options: q.options,
+      correctAnswer: q.correctAnswer,
+      explanation: q.explanation,
+      positiveMarks: q.positiveMarks,
+      negativeMarks: q.negativeMarks,
+      difficulty: q.difficulty,
+      classLevel: q.classLevel,
+      chapter: q.chapter,
+      topic: q.topic,
+      examCategory: q.examCategory,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    store.collections[examQuestionsCol][`eq_${idx + 1}`] = {
+      examId: examLiveId,
+      examStatus: 'LIVE',
+      orderIndex: idx + 1,
+      title: q.title,
+      subject: 'Mathematics',
+      questionText: q.questionText,
+      questionImageUrl: '',
+      questionType: q.questionType,
+      options: q.options,
+      correctAnswer: q.correctAnswer,
+      explanation: q.explanation,
+      positiveMarks: q.positiveMarks,
+      negativeMarks: q.negativeMarks,
+      difficulty: q.difficulty,
+      chapter: q.chapter,
+      topic: q.topic,
+      createdAt: now,
+    };
+  });
+
+  store.collections.exams = {
+    [examLiveId]: {
+      title: `${org.instituteName} Live CBT Mock Test 01`,
+      code: `${short}-MOCK-01`,
+      classLevel: 'All Classes',
+      target: 'JEE Main',
+      subject: 'Mathematics',
+      examTag: 'JEE Main (+4/-1)',
+      folderName: `${short} Starter Question Bank`,
+      examType: 'Full Mock Test',
+      durationMinutes: 30,
+      totalMarks: 16,
+      passingMarks: 6,
+      questionCount: starterQuestions.length,
+      openingDate: today,
+      status: 'LIVE',
+      isPublic: true,
+      webcamEnabled: false,
+      randomizeQuestions: false,
+      assignedCount: 0,
+      assignedBatchIds: [batch1Id, batch2Id],
+      instructions:
+        'Read each question carefully. Single/Multi MCQ carry +4/-1 marks; Numerical & Integer carry +4/0 marks.',
+      createdAt: now,
+      updatedAt: now,
+    },
+    [examDraftId]: {
+      title: `${org.instituteName} Practice Assessment 02`,
+      code: `${short}-PRAC-02`,
+      classLevel: 'Class 12th',
+      target: 'MHT-CET',
+      subject: 'Mathematics',
+      examTag: 'MHT-CET (+2/0)',
+      folderName: `${short} Starter Question Bank`,
+      examType: 'Chapterwise Test',
+      durationMinutes: 45,
+      totalMarks: 0,
+      passingMarks: 0,
+      questionCount: 0,
+      openingDate: today,
+      status: 'DRAFT',
+      isPublic: false,
+      webcamEnabled: false,
+      randomizeQuestions: false,
+      assignedCount: 0,
+      assignedBatchIds: [],
+      instructions: 'Draft paper ready for faculty question import or AI OCR upload.',
+      createdAt: now,
+      updatedAt: now,
+    },
+  };
+
+  store.collections.courses = {
+    [course1Id]: {
+      name: `${org.instituteName} JEE Main Complete Foundation`,
+      description: 'Structured live & recorded modules, chapterwise DPPs, and full-length CBT test analysis.',
+      category: 'JEE Main',
+      classLevel: 'Class 12th',
+      price: 2999,
+      thumbnailUrl: '',
+      status: 'PUBLISHED',
+      enrolledCount: 0,
+      modules: [
+        {
+          id: `mod_${short.toLowerCase()}_1`,
+          title: 'Module 1: Differential & Integral Calculus',
+          chapters: ['Limits & Continuity', 'Definite Integration', 'Differential Equations'],
+        },
+        {
+          id: `mod_${short.toLowerCase()}_2`,
+          title: 'Module 2: Algebra, Matrices & Determinants',
+          chapters: ['Quadratic Equations', 'Matrices & Determinants'],
+        },
+      ],
+      createdAt: now,
+      updatedAt: now,
+    },
+  };
+
+  store.collections.testSeries = {
+    [series1Id]: {
+      title: `${org.instituteName} All-India CBT Mock Series 2026`,
+      description: 'NTA-pattern Computer-Based Tests with instant rank card, accuracy metrics, and solutions.',
+      price: 499,
+      mockTestCount: 1,
+      classLevel: 'Class 12th',
+      examCategory: 'JEE Main Mathematics',
+      status: 'PUBLISHED',
+      examIds: [examLiveId],
+      createdAt: now,
+      updatedAt: now,
+    },
+  };
+
+  store.collections.studyMaterials = {
+    [material1Id]: {
+      title: `${org.instituteName} — Calculus & Algebra Formula Compendium`,
+      description: 'Quick-revision formula sheet for JEE Main & MHT-CET candidates.',
+      classLevel: 'Both',
+      subject: 'Mathematics',
+      chapter: 'Formula Revision',
+      category: 'Formula Sheets',
+      fileUrl: '/api/public/starter-formula-sheet',
+      fileName: `${short}-Formula-Sheet.txt`,
+      fileSize: '4 KB',
+      downloadCount: 0,
+      createdAt: now,
+      updatedAt: now,
+    },
+  };
+
+  store.collections.notifications = {
+    [notif1Id]: {
+      title: `Welcome to ${org.instituteName} Examination Portal`,
+      message: `${short}-MOCK-01 is LIVE now in My Exams. Attempt the 30-minute CBT mock test and review your instant scorecard.`,
+      type: 'EXAM_REMINDER',
+      targetType: 'ALL',
+      readBy: [],
+      createdAt: now,
+    },
+  };
+}
+
+function isEmptyStarterWorkspace(store: TenantRuntimeDatabase): boolean {
+  const hasExams = Object.keys(store.collections.exams || {}).length > 0;
+  const hasCourses = Object.keys(store.collections.courses || {}).length > 0;
+  const hasQuestions = Object.keys(store.collections.questions || {}).length > 0;
+  const hasSeries = Object.keys(store.collections.testSeries || {}).length > 0;
+  return !hasExams && !hasCourses && !hasQuestions && !hasSeries;
 }
 
 export function ensureTenantStore(org: Organization): TenantRuntimeDatabase {
@@ -133,6 +485,10 @@ export function ensureTenantStore(org: Organization): TenantRuntimeDatabase {
         if (!parsed.collections.settings) parsed.collections.settings = {};
         if (!parsed.collections.settings.institute) {
           parsed.collections.settings.institute = createInitialTenantSettings(org);
+          dirty = true;
+        }
+        if (org.id !== 'SALAR-ORG-00001' && isEmptyStarterWorkspace(parsed)) {
+          seedStarterExamWorkspace(org, parsed);
           dirty = true;
         }
         if (dirty) {
@@ -159,8 +515,38 @@ export function ensureTenantStore(org: Organization): TenantRuntimeDatabase {
     },
     updatedAt: now,
   };
+  if (org.id !== 'SALAR-ORG-00001') {
+    seedStarterExamWorkspace(org, initial);
+  }
   writeTenantStore(org.tenantId, initial);
   return initial;
+}
+
+export function getTenantRuntimeMetrics(tenantId: string): {
+  studentCount: number;
+  examCount: number;
+  questionCount: number;
+  attemptCount: number;
+  storageUsedMb: number;
+} {
+  try {
+    const filePath = getTenantDbPath(tenantId);
+    if (!fs.existsSync(filePath)) {
+      return { studentCount: 0, examCount: 0, questionCount: 0, attemptCount: 0, storageUsedMb: 0 };
+    }
+    const stat = fs.statSync(filePath);
+    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as TenantRuntimeDatabase;
+    const cols = parsed?.collections || {};
+    return {
+      studentCount: Object.keys(cols.students || {}).length,
+      examCount: Object.keys(cols.exams || {}).length,
+      questionCount: Object.keys(cols.questions || {}).length,
+      attemptCount: Object.keys(cols.examAttempts || {}).length,
+      storageUsedMb: Math.max(1, Math.round((stat.size / (1024 * 1024)) * 100) / 100),
+    };
+  } catch {
+    return { studentCount: 0, examCount: 0, questionCount: 0, attemptCount: 0, storageUsedMb: 0 };
+  }
 }
 
 export function isTenantAdminClaimed(org: Organization): boolean {

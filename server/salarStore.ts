@@ -31,35 +31,72 @@ interface ServerKeyStore {
   sessionSecret: string;
 }
 
+function getVercelDeploymentSeed(): string {
+  const vercelMarkers = [
+    process.env.VERCEL_PROJECT_ID,
+    process.env.VERCEL_ORG_ID,
+    process.env.VERCEL_PROJECT_PRODUCTION_URL,
+    process.env.VERCEL_URL,
+    process.env.VERCEL_GIT_REPO_ID,
+  ]
+    .filter((v): v is string => Boolean(v && v.trim()))
+    .join('|');
+  let firebaseSeed = '';
+  try {
+    const cfgPath = path.resolve(process.cwd(), 'firebase-applet-config.json');
+    if (fs.existsSync(cfgPath)) {
+      const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as { projectId?: string; appId?: string };
+      firebaseSeed = `${cfg.projectId || ''}|${cfg.appId || ''}`;
+    }
+  } catch {
+    // ignore
+  }
+  return `${vercelMarkers}|${firebaseSeed}`;
+}
+
 function loadOrCreateServerKeys(): ServerKeyStore {
   const existing = (() => {
-    try {
-      if (fs.existsSync(KEYS_FILE)) {
-        return JSON.parse(fs.readFileSync(KEYS_FILE, 'utf-8')) as Partial<ServerKeyStore>;
+    const candidates = [KEYS_FILE, path.resolve(process.cwd(), '.runtime_auth', 'salar-keys.json')];
+    for (const candidate of candidates) {
+      try {
+        if (fs.existsSync(candidate)) {
+          return JSON.parse(fs.readFileSync(candidate, 'utf-8')) as Partial<ServerKeyStore>;
+        }
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
     }
     return {};
   })();
+
+  const isServerless = process.env.VERCEL === '1' || Boolean(process.env.VERCEL_ENV);
+  const deploySeed = getVercelDeploymentSeed();
+  const deriveFallback = (purpose: string) =>
+    isServerless && deploySeed
+      ? crypto.createHmac('sha256', `salar-serverless-${purpose}-v1`).update(deploySeed).digest('hex')
+      : crypto.randomBytes(32).toString('hex');
 
   const keys: ServerKeyStore = {
     licenseHmacSecret:
       process.env.LICENSE_HMAC_SECRET?.trim() ||
       existing.licenseHmacSecret ||
-      crypto.randomBytes(32).toString('hex'),
+      deriveFallback('license'),
     backupEncryptionKeyHex:
       process.env.BACKUP_ENCRYPTION_KEY?.trim() ||
       existing.backupEncryptionKeyHex ||
-      crypto.randomBytes(32).toString('hex'),
+      deriveFallback('backup'),
     sessionSecret:
       process.env.SESSION_SECRET?.trim() ||
       existing.sessionSecret ||
-      crypto.randomBytes(32).toString('hex'),
+      deriveFallback('session'),
   };
 
   if (!fs.existsSync(KEYS_FILE)) {
-    fs.writeFileSync(KEYS_FILE, JSON.stringify(keys, null, 2), { mode: 0o600 });
+    try {
+      fs.writeFileSync(KEYS_FILE, JSON.stringify(keys, null, 2), { mode: 0o600 });
+    } catch {
+      // Best effort on ephemeral disk
+    }
   }
   return keys;
 }
@@ -704,30 +741,209 @@ export function createDefaultManualGateway(): ManualPaymentGatewayConfig {
   };
 }
 
+export function ensureSalarTestSandbox(db: SalarDatabaseSchema): boolean {
+  if (db.organizations.some((o) => o.id === 'SALAR-ORG-TEST' || o.portalSlug === 'salar-test')) {
+    return false;
+  }
+
+  const now = new Date().toISOString();
+  const oneYearLater = addPeriodToIso(now, 'YEARLY');
+  const proPlan = db.licensePlans.find((p) => p.code === 'PRO') || db.licensePlans[1] || db.licensePlans[0];
+  const orgId = 'SALAR-ORG-TEST';
+  const tenantId = 'tenant-salar-test';
+  const databaseId = 'salar_tenant_test';
+  const allocId = 'alloc-test';
+  const licId = 'lic-test';
+  const licKey = generateLicenseKey('SLR', 'PRO');
+  const licSig = signLicensePayload(licKey, orgId, 'PRO', oneYearLater);
+
+  db.organizations.push({
+    id: orgId,
+    instituteName: 'SALAR Exam Portal (Test Sandbox)',
+    shortCode: 'SLR',
+    contactPerson: 'SALAR Academic Coordinator',
+    email: 'testportal@salartech.com',
+    mobile: '+91 98000 00001',
+    address: 'SALAR Cloud Sandbox Campus',
+    country: 'India',
+    state: 'Maharashtra',
+    city: 'Pune',
+    website: '',
+    logoUrl: '',
+    customDomain: '',
+    subdomain: 'salar-test.salartech.com',
+    portalSlug: 'salar-test',
+    portalPath: '/p/salar-test',
+    planId: proPlan?.id || 'plan-pro',
+    planCode: 'PRO',
+    billingCycle: 'YEARLY',
+    customPrice: 0,
+    studentCapacity: 1000,
+    examCapacity: 250,
+    storageLimitMb: 15360,
+    deploymentType: 'SHARED_MULTI_TENANT',
+    tenantId,
+    databaseId,
+    portalAllocationId: allocId,
+    licenseId: licId,
+    previousPortalSlugs: ['test'],
+    status: 'ACTIVE',
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  db.organizationUsers.push({
+    id: 'orguser-test',
+    organizationId: orgId,
+    tenantId,
+    email: 'testportal@salartech.com',
+    name: 'SALAR Academic Coordinator',
+    role: 'CLIENT_SUPER_ADMIN',
+    status: 'ACTIVE',
+    createdAt: now,
+  });
+
+  db.tenants.push({
+    id: tenantId,
+    organizationId: orgId,
+    databaseId,
+    namespace: 'salar_test_sandbox',
+    isolationMode: 'SHARED_SCHEMA',
+    storageBucketPrefix: 'tenants/salar_test_sandbox',
+    status: 'ACTIVE',
+    studentCount: 0,
+    examCount: 2,
+    questionCount: 4,
+    storageUsedMb: 2,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  db.tenantDomains.push({
+    id: 'dom-test',
+    organizationId: orgId,
+    tenantId,
+    domain: 'salar-test.salartech.com',
+    type: 'SUBDOMAIN',
+    dnsTarget: 'cname.salartech.com',
+    dnsVerified: true,
+    sslStatus: 'ACTIVE',
+    sslExpiresAt: oneYearLater,
+    lastCheckedAt: now,
+    verificationNotes: 'SALAR Portal Test sandbox route (/test & /p/salar-test) ready.',
+    isActive: true,
+    createdAt: now,
+  });
+
+  db.licenses.push({
+    id: licId,
+    licenseKey: licKey,
+    signature: licSig,
+    organizationId: orgId,
+    tenantId,
+    planId: proPlan?.id || 'plan-pro',
+    planCode: 'PRO',
+    portalAllocationId: allocId,
+    issueDate: now,
+    activationDate: now,
+    expirationDate: oneYearLater,
+    renewalDate: oneYearLater,
+    billingCycle: 'YEARLY',
+    studentLimit: 1000,
+    examLimit: 250,
+    storageLimitMb: 15360,
+    priceAmount: 0,
+    featurePermissions: proPlan?.features || ['CBT Engine', 'Question Bank', 'Manual Payments'],
+    status: 'ACTIVE',
+    notes: 'Dedicated SALAR Exam Portal Test Sandbox for live walkthroughs before client assignment.',
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  db.licenseBindings.push({
+    id: 'bind-test',
+    licenseId: licId,
+    organizationId: orgId,
+    tenantId,
+    portalAllocationId: allocId,
+    active: true,
+    boundAt: now,
+  });
+
+  db.portalAllocations.push({
+    id: allocId,
+    code: 'ALLOC-TEST',
+    name: 'SALAR Portal Test Sandbox',
+    deploymentType: 'SHARED_MULTI_TENANT',
+    region: 'asia-east1',
+    environment: 'staging',
+    capacityStudents: 1000,
+    capacityExams: 250,
+    capacityStorageMb: 15360,
+    currentOrganizationId: orgId,
+    currentTenantId: tenantId,
+    status: 'ASSIGNED',
+    healthStatus: 'HEALTHY',
+    endpointUrl: '/p/salar-test',
+    reassignmentCount: 0,
+    lastHealthCheckAt: now,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  db.subscriptions.push({
+    id: 'sub-test',
+    organizationId: orgId,
+    organizationName: 'SALAR Exam Portal (Test Sandbox)',
+    planId: proPlan?.id || 'plan-pro',
+    planCode: 'PRO',
+    billingCycle: 'YEARLY',
+    baseAmount: 0,
+    gstPercent: 18,
+    gstAmount: 0,
+    totalAmount: 0,
+    currency: 'INR',
+    status: 'ACTIVE',
+    currentPeriodStart: now,
+    currentPeriodEnd: oneYearLater,
+    autoRenew: true,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  return true;
+}
+
 export function readSalarDb(): SalarDatabaseSchema {
   try {
     if (!fs.existsSync(DB_FILE)) {
       const initial = createInitialDatabase();
+      ensureSalarTestSandbox(initial);
       writeSalarDb(initial);
       return initial;
     }
     const raw = fs.readFileSync(DB_FILE, 'utf-8');
     const parsed = JSON.parse(raw) as SalarDatabaseSchema;
+    let changed = false;
     if (!parsed.systemSettings.manualGateway) {
       parsed.systemSettings.manualGateway = createDefaultManualGateway();
+      changed = true;
     }
     if (
       parsed.systemSettings.activePaymentGateway !== 'MANUAL' &&
       parsed.systemSettings.activePaymentGateway !== 'BANK_TRANSFER'
     ) {
       parsed.systemSettings.activePaymentGateway = 'MANUAL';
+      changed = true;
     }
     parsed.systemSettings.manualGateway.enabled = true;
     if (!parsed.counters) {
       parsed.counters = { orgSeq: 1, allocSeq: 3, invoiceSeq: 1, dbSeq: 1 };
+      changed = true;
     }
     if (typeof parsed.counters.dbSeq !== 'number' || parsed.counters.dbSeq < 1) {
       parsed.counters.dbSeq = Math.max(1, parsed.organizations?.length || 1);
+      changed = true;
     }
     if (Array.isArray(parsed.organizations)) {
       let nextSeq = parsed.counters.dbSeq;
@@ -737,12 +953,15 @@ export function readSalarDb(): SalarDatabaseSchema {
             org.id === 'SALAR-ORG-00001'
               ? 'gurukul'
               : createUniquePortalSlug(org.instituteName, parsed.organizations, org.id);
+          changed = true;
         }
         if (!org.portalPath) {
           org.portalPath = org.id === 'SALAR-ORG-00001' ? '/' : `/p/${org.portalSlug}`;
+          changed = true;
         }
         if (!Array.isArray(org.previousPortalSlugs)) {
           org.previousPortalSlugs = [];
+          changed = true;
         }
         if (!org.databaseId) {
           if (org.id === 'SALAR-ORG-00001') {
@@ -751,17 +970,26 @@ export function readSalarDb(): SalarDatabaseSchema {
             nextSeq += 1;
             org.databaseId = `salar_tenant_${String(nextSeq).padStart(3, '0')}`;
           }
+          changed = true;
         }
         const t = parsed.tenants?.find((item) => item.id === org.tenantId);
         if (t && !t.databaseId) {
           t.databaseId = org.databaseId;
+          changed = true;
         }
       });
       parsed.counters.dbSeq = nextSeq;
     }
+    if (ensureSalarTestSandbox(parsed)) {
+      changed = true;
+    }
+    if (changed) {
+      writeSalarDb(parsed);
+    }
     return parsed;
   } catch {
     const fallback = createInitialDatabase();
+    ensureSalarTestSandbox(fallback);
     writeSalarDb(fallback);
     return fallback;
   }
