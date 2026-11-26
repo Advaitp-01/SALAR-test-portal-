@@ -1,0 +1,477 @@
+{
+  "ownerUsers": [],
+  "ownerSessions": [],
+  "organizations": [
+    {
+      "id": "SALAR-ORG-00001",
+      "instituteName": "Giri Sir's Gurukul Classes",
+      "shortCode": "GC",
+      "contactPerson": "Prof. Giri Sir",
+      "email": "gurukulclassestech@gmail.com",
+      "mobile": "+91 98230 00000",
+      "address": "New Usmanpura",
+      "country": "India",
+      "state": "Maharashtra",
+      "city": "Chhatrapati Sambhajinagar",
+      "website": "https://girisirgurukul.in",
+      "logoUrl": "",
+      "customDomain": "",
+      "subdomain": "gurukul.salartech.com",
+      "portalSlug": "gurukul",
+      "portalPath": "/",
+      "planId": "plan-pro",
+      "planCode": "PRO",
+      "billingCycle": "YEARLY",
+      "customPrice": null,
+      "studentCapacity": 1000,
+      "examCapacity": 250,
+      "storageLimitMb": 15360,
+      "deploymentType": "SHARED_MULTI_TENANT",
+      "tenantId": "tenant-gurukul-001",
+      "portalAllocationId": "alloc-001",
+      "licenseId": "lic-001",
+      "status": "ACTIVE",
+      "createdAt": "2026-11-26T06:45:18.502Z",
+      "updatedAt": "2026-11-26T06:45:18.502Z"
+    }
+  ],
+  "organizationUsers": [
+    {
+      "id": "orguser-001",
+      "organizationId": "SALAR-ORG-00001",
+      "tenantId": "tenant-gurukul-001",
+      "email": "gurukulclassestech@gmail.com",
+      "name": "Prof. Giri Sir",
+      "role": "CLIENT_SUPER_ADMIN",
+      "status": "ACTIVE",
+      "createdAt": "2026-11-26T06:45:18.502Z"
+    }
+  ],
+  "tenants": [
+    {
+      "id": "tenant-gurukul-001",
+      "organizationId": "SALAR-ORG-00001",
+      "namespace": "gurukul_primary",
+      "isolationMode": "SHARED_SCHEMA",
+      "storageBucketPrefix": "tenants/gurukul_primary",
+      "status": "ACTIVE",
+      "studentCount": 0,
+      "examCount": 0,
+      "questionCount": 0,
+      "storageUsedMb": 12,
+      "createdAt": "2026-11-26T06:45:18.502Z",
+      "updatedAt": "2026-11-26T06:45:18.502Z"
+    }
+  ],
+  "tenantDomains": [
+    {
+      "id": "dom-001",
+      "organizationId": "SALAR-ORG-00001",
+      "tenantId": "tenant-gurukul-001",
+      "domain": "gurukul.salartech.com",
+      "type": "SUBDOMAIN",
+      "dnsTarget": "cname.salartech.com",
+      "dnsVerified": true,
+      "sslStatus": "ACTIVE",
+      "sslExpiresAt": "2027-11-26T06:45:18.502Z",
+      "lastCheckedAt": "2026-11-26T06:45:18.502Z",
+      "verificationNotes": "Platform wildcard TLS active.",
+      "isActive": true,
+      "createdAt": "2026-11-26T06:45:18.502Z"
+    }
+  ],
+  "licensePlans": [
+    {
+      "id": "plan-starter",
+      "code": "STARTER",
+      "name": "Starter Institute",
+      "description": "For emerging coaching batches up to 150 students with core CBT examination workflows.",
+      "monthlyPrice": 1999,
+      "quarterlyPrice": 5499,
+      "yearlyPrice": 19999,
+      "studentLimit": 150,
+      "examLimit": 40,
+      "storageLimitMb": 2048,
+      "allowDedicated": false,
+      "features": [
+        "Basic Exam Management",
+        "Standard Analytics",
+        "CBT Engine",
+        "2 GB Storage"
+      ],
+      "addOnPrices": {
+        "extra100StudentsMonthly": 699,
+        "extra10GbStorageMonthly": 499,
+        "extra50ExamsMonthly": 399
+      },
+      "isActive": true,
+      "updatedAt": "2026-11-26T06:45:18.502Z"
+    },
+    {
+      "id": "plan-pro",
+      "code": "PRO",
+      "name": "Pro Academy",
+      "description": "Full-featured coaching institute platform with Question Bank, AI OCR, PDF/Image uploads & custom branding.",
+      "monthlyPrice": 4999,
+      "quarterlyPrice": 13999,
+      "yearlyPrice": 49999,
+      "studentLimit": 1000,
+      "examLimit": 250,
+      "storageLimitMb": 15360,
+      "allowDedicated": false,
+      "features": [
+        "Advanced Exam Management",
+        "Question Bank & AI OCR",
+        "PDF & Image Uploads",
+        "Advanced Analytics",
+        "Custom Branding",
+        "15 GB Storage"
+      ],
+      "addOnPrices": {
+        "extra100StudentsMonthly": 499,
+        "extra10GbStorageMonthly": 399,
+        "extra50ExamsMonthly": 299
+      },
+      "isActive": true,
+      "updatedAt": "2026-11-26T06:45:18.502Z"
+    },
+    {
+      "id": "plan-enterprise",
+      "code": "ENTERPRISE",
+      "name": "Enterprise Campus",
+      "description": "Dedicated infrastructure deployment, custom SLA, priority support & isolated storage for large institutions.",
+      "monthlyPrice": 14999,
+      "quarterlyPrice": 41999,
+      "yearlyPrice": 149999,
+      "studentLimit": 5000,
+      "examLimit": 2000,
+      "storageLimitMb": 102400,
+      "allowDedicated": true,
+      "features": [
+        "Dedicated Deployment Option",
+        "Infrastructure Monitoring",
+        "Priority Support",
+        "Custom Integrations & Domain SSL",
+        "100 GB Isolated Storage"
+      ],
+      "addOnPrices": {
+        "extra100StudentsMonthly": 399,
+        "extra10GbStorageMonthly": 299,
+        "extra50ExamsMonthly": 199
+      },
+      "isActive": true,
+      "updatedAt": "2026-11-26T06:45:18.502Z"
+    }
+  ],
+  "licenses": [
+    {
+      "id": "lic-001",
+      "licenseKey": "SALAR-GC-2026-PRO-96C4ACA1",
+      "signature": "c2e7c92dfc3c2328006c6858072944e8be9f613ce92cad3a3085f9b0d5c009b9",
+      "organizationId": "SALAR-ORG-00001",
+      "tenantId": "tenant-gurukul-001",
+      "planId": "plan-pro",
+      "planCode": "PRO",
+      "portalAllocationId": "alloc-001",
+      "issueDate": "2026-11-26T06:45:18.502Z",
+      "activationDate": "2026-11-26T06:45:18.502Z",
+      "expirationDate": "2027-11-26T06:45:18.502Z",
+      "renewalDate": "2027-11-26T06:45:18.502Z",
+      "billingCycle": "YEARLY",
+      "studentLimit": 1000,
+      "examLimit": 250,
+      "storageLimitMb": 15360,
+      "priceAmount": 49999,
+      "featurePermissions": [
+        "Advanced Exam Management",
+        "Question Bank & AI OCR",
+        "PDF & Image Uploads",
+        "Advanced Analytics",
+        "Custom Branding",
+        "15 GB Storage"
+      ],
+      "status": "ACTIVE",
+      "notes": "Primary active institute portal allocation",
+      "createdAt": "2026-11-26T06:45:18.502Z",
+      "updatedAt": "2026-11-26T06:45:18.502Z"
+    }
+  ],
+  "licenseBindings": [
+    {
+      "id": "bind-001",
+      "licenseId": "lic-001",
+      "organizationId": "SALAR-ORG-00001",
+      "tenantId": "tenant-gurukul-001",
+      "portalAllocationId": "alloc-001",
+      "active": true,
+      "boundAt": "2026-11-26T06:45:18.502Z"
+    }
+  ],
+  "licenseEvents": [
+    {
+      "id": "le-001",
+      "licenseId": "lic-001",
+      "licenseKey": "SALAR-GC-2026-PRO-96C4ACA1",
+      "fromStatus": "NONE",
+      "toStatus": "ACTIVE",
+      "actor": "SYSTEM_BOOTSTRAP",
+      "reason": "Initialized existing Gurukul Classes portal under SALAR Tech license governance.",
+      "timestamp": "2026-11-26T06:45:18.502Z"
+    }
+  ],
+  "portalAllocations": [
+    {
+      "id": "alloc-001",
+      "code": "ALLOC-001",
+      "name": "Portal Allocation 001 (Primary Node)",
+      "deploymentType": "SHARED_MULTI_TENANT",
+      "region": "asia-east1",
+      "environment": "production",
+      "capacityStudents": 1500,
+      "capacityExams": 500,
+      "capacityStorageMb": 20480,
+      "currentOrganizationId": "SALAR-ORG-00001",
+      "currentTenantId": "tenant-gurukul-001",
+      "status": "ASSIGNED",
+      "healthStatus": "HEALTHY",
+      "endpointUrl": "/?org=SALAR-ORG-00001",
+      "reassignmentCount": 0,
+      "lastHealthCheckAt": "2026-11-26T06:45:18.502Z",
+      "createdAt": "2026-11-26T06:45:18.502Z",
+      "updatedAt": "2026-11-26T06:45:18.502Z"
+    },
+    {
+      "id": "alloc-002",
+      "code": "ALLOC-002",
+      "name": "Portal Allocation 002 (Shared Pool)",
+      "deploymentType": "SHARED_MULTI_TENANT",
+      "region": "asia-east1",
+      "environment": "production",
+      "capacityStudents": 1000,
+      "capacityExams": 300,
+      "capacityStorageMb": 15360,
+      "currentOrganizationId": null,
+      "currentTenantId": null,
+      "status": "AVAILABLE",
+      "healthStatus": "HEALTHY",
+      "endpointUrl": "",
+      "reassignmentCount": 0,
+      "lastHealthCheckAt": "2026-11-26T06:45:18.502Z",
+      "createdAt": "2026-11-26T06:45:18.502Z",
+      "updatedAt": "2026-11-26T06:45:18.502Z"
+    },
+    {
+      "id": "alloc-003",
+      "code": "ALLOC-003",
+      "name": "Portal Allocation 003 (Dedicated Enterprise)",
+      "deploymentType": "DEDICATED",
+      "region": "asia-south1",
+      "environment": "production",
+      "capacityStudents": 5000,
+      "capacityExams": 2000,
+      "capacityStorageMb": 102400,
+      "currentOrganizationId": null,
+      "currentTenantId": null,
+      "status": "AVAILABLE",
+      "healthStatus": "HEALTHY",
+      "endpointUrl": "",
+      "reassignmentCount": 0,
+      "lastHealthCheckAt": "2026-11-26T06:45:18.502Z",
+      "createdAt": "2026-11-26T06:45:18.502Z",
+      "updatedAt": "2026-11-26T06:45:18.502Z"
+    }
+  ],
+  "portalDeployments": [
+    {
+      "id": "dep-001",
+      "allocationId": "alloc-001",
+      "organizationId": "SALAR-ORG-00001",
+      "tenantId": "tenant-gurukul-001",
+      "deploymentType": "SHARED_MULTI_TENANT",
+      "environment": "production",
+      "version": "2.4.0",
+      "status": "DEPLOYED",
+      "stepsCompleted": [
+        "Tenant Namespace Initialized",
+        "License Bound",
+        "Subdomain Routed",
+        "Health Verified"
+      ],
+      "deployedBy": "SYSTEM_BOOTSTRAP",
+      "deployedAt": "2026-11-26T06:45:18.502Z"
+    }
+  ],
+  "deploymentInstances": [
+    {
+      "id": "inst-primary",
+      "instanceName": "salar-node-primary-01",
+      "region": "asia-east1",
+      "environment": "development",
+      "hostname": "localhost",
+      "pid": 52,
+      "weight": 100,
+      "status": "HEALTHY",
+      "lastHeartbeatAt": "2026-11-26T06:45:18.502Z",
+      "createdAt": "2026-11-26T06:45:18.502Z"
+    }
+  ],
+  "scalingPolicy": {
+    "minInstances": 1,
+    "maxInstances": 8,
+    "targetCpuPercent": 70,
+    "targetMemoryPercent": 75,
+    "targetRequestsPerMin": 1200,
+    "targetQueueDepth": 50,
+    "autoScalingEnabled": true,
+    "cdnEnabled": true,
+    "redisCacheEnabled": false,
+    "updatedAt": "2026-11-26T06:45:18.502Z"
+  },
+  "subscriptions": [
+    {
+      "id": "sub-001",
+      "organizationId": "SALAR-ORG-00001",
+      "organizationName": "Giri Sir's Gurukul Classes",
+      "planId": "plan-pro",
+      "planCode": "PRO",
+      "billingCycle": "YEARLY",
+      "baseAmount": 49999,
+      "gstPercent": 18,
+      "gstAmount": 9000,
+      "totalAmount": 58999,
+      "currency": "INR",
+      "status": "ACTIVE",
+      "currentPeriodStart": "2026-11-26T06:45:18.502Z",
+      "currentPeriodEnd": "2027-11-26T06:45:18.502Z",
+      "autoRenew": true,
+      "createdAt": "2026-11-26T06:45:18.502Z",
+      "updatedAt": "2026-11-26T06:45:18.502Z"
+    }
+  ],
+  "subscriptionInvoices": [
+    {
+      "id": "inv-001",
+      "invoiceNumber": "SALAR-INV-2026-0001",
+      "subscriptionId": "sub-001",
+      "organizationId": "SALAR-ORG-00001",
+      "organizationName": "Giri Sir's Gurukul Classes",
+      "subtotal": 49999,
+      "gstPercent": 18,
+      "gstAmount": 9000,
+      "totalAmount": 58999,
+      "dueDate": "2026-11-26",
+      "paidAt": "2026-11-26T06:45:18.502Z",
+      "status": "PAID",
+      "description": "Pro Academy Yearly Subscription — ALLOC-001",
+      "createdAt": "2026-11-26T06:45:18.502Z"
+    }
+  ],
+  "payments": [
+    {
+      "id": "pay-001",
+      "invoiceId": "inv-001",
+      "subscriptionId": "sub-001",
+      "organizationId": "SALAR-ORG-00001",
+      "organizationName": "Giri Sir's Gurukul Classes",
+      "gateway": "BANK_TRANSFER",
+      "gatewayOrderId": "ORD-GC-2026-0001",
+      "gatewayPaymentId": "TXN-VERIFIED-0001",
+      "idempotencyKey": "idem-init-001",
+      "amount": 58999,
+      "gstAmount": 9000,
+      "currency": "INR",
+      "status": "VERIFIED",
+      "signatureVerified": true,
+      "verifiedOnServerBy": "SYSTEM_BOOTSTRAP",
+      "createdAt": "2026-11-26T06:45:18.502Z",
+      "verifiedAt": "2026-11-26T06:45:18.502Z"
+    }
+  ],
+  "usageRecords": [
+    {
+      "id": "use-001",
+      "organizationId": "SALAR-ORG-00001",
+      "tenantId": "tenant-gurukul-001",
+      "period": "2026-11",
+      "activeStudents": 0,
+      "examsCreated": 0,
+      "totalAttempts": 0,
+      "storageUsedMb": 12,
+      "apiRequests": 0,
+      "bandwidthMb": 0,
+      "recordedAt": "2026-11-26T06:45:18.502Z"
+    }
+  ],
+  "backupJobs": [],
+  "restoreJobs": [],
+  "notifications": [
+    {
+      "id": "notif-001",
+      "title": "SALAR Tech Control Plane Active",
+      "message": "Giri Sir's Gurukul Classes (SALAR-ORG-00001) is bound to ALLOC-001. Two additional portal allocations (ALLOC-002, ALLOC-003) are available for provisioning.",
+      "severity": "INFO",
+      "category": "INFRASTRUCTURE",
+      "read": false,
+      "createdAt": "2026-11-26T06:45:18.502Z"
+    }
+  ],
+  "auditLogs": [
+    {
+      "id": "audit-001",
+      "actor": "SYSTEM_BOOTSTRAP",
+      "actorType": "SYSTEM",
+      "action": "PLATFORM_INITIALIZED",
+      "resourceType": "Platform",
+      "resourceId": "SALAR-TECH",
+      "ip": "127.0.0.1",
+      "details": "Initialized SALAR Tech SaaS control plane alongside existing Gurukul Classes portal.",
+      "status": "SUCCESS",
+      "timestamp": "2026-11-26T06:45:18.502Z"
+    }
+  ],
+  "systemSettings": {
+    "platformName": "SALAR Tech SaaS Platform",
+    "ownerDisplayName": "Platform Owner",
+    "ownerEmail": "advaitp38@gmail.com",
+    "supportEmail": "support@salartech.com",
+    "gstNumber": "27SALAR0000A1Z5",
+    "defaultGstPercent": 18,
+    "rpoTargetMinutes": 60,
+    "rtoTargetMinutes": 30,
+    "retentionDays": 90,
+    "rateLimitMaxAttempts": 5,
+    "rateLimitWindowMinutes": 15,
+    "sessionTimeoutHours": 12,
+    "enforceMfaForSensitiveActions": false,
+    "backupEncryptionEnabled": true,
+    "activePaymentGateway": "MANUAL",
+    "manualGateway": {
+      "enabled": true,
+      "upiId": "",
+      "upiDisplayName": "SALAR Tech SaaS Platform",
+      "qrCodeUrl": "",
+      "bankAccountName": "SALAR Tech Solutions",
+      "bankName": "",
+      "accountNumber": "",
+      "ifscCode": "",
+      "branchName": "",
+      "acceptedModes": [
+        "UPI",
+        "NEFT_IMPS_RTGS",
+        "BANK_TRANSFER",
+        "CHEQUE",
+        "CASH"
+      ],
+      "paymentInstructions": "Pay the exact invoice amount via UPI/QR or NEFT/IMPS, then submit your 12-digit UTR / Transaction Reference and payment screenshot for owner approval.",
+      "requireReceiptUpload": false,
+      "autoExtendOnApproval": true
+    },
+    "updatedAt": "2026-11-26T06:45:18.502Z"
+  },
+  "archivedTenants": [],
+  "counters": {
+    "orgSeq": 1,
+    "allocSeq": 3,
+    "invoiceSeq": 1
+  }
+}

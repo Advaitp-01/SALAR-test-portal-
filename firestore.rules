@@ -1,0 +1,723 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Safety Net: Default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ------------------------------------------------------------------------
+    // Reusable Hardened Global Primitives
+    // ------------------------------------------------------------------------
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isPrimaryAdmin() {
+      return isVerifiedUser()
+        && request.auth.token.email is string
+        && request.auth.token.email.lower() in ['gurukulclassestech@gmail.com', 'advaitp38@gmail.com'];
+    }
+
+    function isAdmin() {
+      return isPrimaryAdmin() || (isVerifiedUser() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)));
+    }
+
+    function isStr(val, maxLen) {
+      return val is string && val.size() <= maxLen;
+    }
+
+    function isNonEmptyStr(val, maxLen) {
+      return val is string && val.size() >= 1 && val.size() <= maxLen;
+    }
+
+    function isValidBoundedList(arr, maxSize) {
+      return arr is list && arr.size() <= maxSize;
+    }
+
+    // ------------------------------------------------------------------------
+    // Validation Blueprints (Anti-Update-Gap)
+    // ------------------------------------------------------------------------
+    function isValidAdmin(data) {
+      return data.keys().hasAll(['uid', 'email', 'createdAt'])
+        && data.keys().hasOnly(['uid', 'email', 'name', 'createdAt'])
+        && isValidId(data.uid)
+        && isNonEmptyStr(data.email, 254)
+        && (!('name' in data) || isStr(data.name, 120))
+        && isNonEmptyStr(data.createdAt, 64);
+    }
+
+    function isValidSettings(data) {
+      return data.keys().hasAll(['instituteName', 'primaryColor', 'secondaryColor'])
+        && data.keys().hasOnly([
+          'instituteName', 'tagline', 'storageTag', 'logoUrl', 'logoWidth', 'logoHeight',
+          'heroImage', 'heroTitle', 'heroSubtitle', 'primaryCta', 'secondaryCta',
+          'faviconUrl', 'primaryColor', 'secondaryColor', 'address', 'phone',
+          'whatsapp', 'email', 'website', 'socialLinks', 'portalConfig', 'updatedAt'
+        ])
+        && isNonEmptyStr(data.instituteName, 150)
+        && isNonEmptyStr(data.primaryColor, 20)
+        && isNonEmptyStr(data.secondaryColor, 20)
+        && (!('tagline' in data) || isStr(data.tagline, 200))
+        && (!('storageTag' in data) || isStr(data.storageTag, 80))
+        && (!('logoUrl' in data) || isStr(data.logoUrl, 1000))
+        && (!('logoWidth' in data) || data.logoWidth is number)
+        && (!('logoHeight' in data) || data.logoHeight is number)
+        && (!('heroImage' in data) || isStr(data.heroImage, 1000))
+        && (!('heroTitle' in data) || isStr(data.heroTitle, 200))
+        && (!('heroSubtitle' in data) || isStr(data.heroSubtitle, 400))
+        && (!('primaryCta' in data) || isStr(data.primaryCta, 60))
+        && (!('secondaryCta' in data) || isStr(data.secondaryCta, 60))
+        && (!('faviconUrl' in data) || isStr(data.faviconUrl, 1000))
+        && (!('address' in data) || isStr(data.address, 400))
+        && (!('phone' in data) || isStr(data.phone, 40))
+        && (!('whatsapp' in data) || isStr(data.whatsapp, 40))
+        && (!('email' in data) || isStr(data.email, 254))
+        && (!('website' in data) || isStr(data.website, 300))
+        && (!('socialLinks' in data) || data.socialLinks is map)
+        && (!('portalConfig' in data) || data.portalConfig is map)
+        && (!('updatedAt' in data) || isStr(data.updatedAt, 64));
+    }
+
+    function isValidStudent(data) {
+      return data.keys().hasAll(['name', 'status', 'origin'])
+        && data.keys().hasOnly([
+          'uid', 'name', 'email', 'mobile', 'whatsapp', 'classLevel', 'targetExam',
+          'rollNumber', 'username', 'enrollmentId', 'batchId', 'batchName',
+          'origin', 'status', 'photoUrl', 'attemptsCount', 'avgPercentage',
+          'createdAt', 'updatedAt'
+        ])
+        && isNonEmptyStr(data.name, 120)
+        && data.status in ['ACTIVE', 'QUICK_JOIN', 'INACTIVE', 'SUSPENDED']
+        && data.origin in ['PORTAL_SIGNUP', 'QUICK_JOIN', 'ADMIN_ADDED']
+        && (!('uid' in data) || isStr(data.uid, 128))
+        && (!('email' in data) || isStr(data.email, 254))
+        && (!('mobile' in data) || isStr(data.mobile, 30))
+        && (!('whatsapp' in data) || isStr(data.whatsapp, 30))
+        && (!('classLevel' in data) || data.classLevel in ['Class 11th', 'Class 12th', 'Dropper / Repeater'])
+        && (!('targetExam' in data) || isStr(data.targetExam, 60))
+        && (!('rollNumber' in data) || isStr(data.rollNumber, 40))
+        && (!('username' in data) || isStr(data.username, 60))
+        && (!('enrollmentId' in data) || isStr(data.enrollmentId, 60))
+        && (!('batchId' in data) || isStr(data.batchId, 128))
+        && (!('batchName' in data) || isStr(data.batchName, 120))
+        && (!('photoUrl' in data) || isStr(data.photoUrl, 1000))
+        && (!('attemptsCount' in data) || data.attemptsCount is number)
+        && (!('avgPercentage' in data) || data.avgPercentage is number)
+        && (!('createdAt' in data) || isStr(data.createdAt, 64))
+        && (!('updatedAt' in data) || isStr(data.updatedAt, 64));
+    }
+
+    function isValidFaculty(data) {
+      return data.keys().hasAll(['name', 'qualification', 'subjectSpecialization', 'status'])
+        && data.keys().hasOnly([
+          'name', 'qualification', 'subjectSpecialization', 'experience', 'email',
+          'contactNumber', 'photoUrl', 'assignedBatches', 'status', 'createdAt', 'updatedAt'
+        ])
+        && isNonEmptyStr(data.name, 120)
+        && isNonEmptyStr(data.qualification, 150)
+        && isNonEmptyStr(data.subjectSpecialization, 200)
+        && data.status in ['ACTIVE', 'INACTIVE']
+        && (!('experience' in data) || isStr(data.experience, 80))
+        && (!('email' in data) || isStr(data.email, 254))
+        && (!('contactNumber' in data) || isStr(data.contactNumber, 30))
+        && (!('photoUrl' in data) || isStr(data.photoUrl, 1000))
+        && (!('assignedBatches' in data) || isValidBoundedList(data.assignedBatches, 30))
+        && (!('createdAt' in data) || isStr(data.createdAt, 64))
+        && (!('updatedAt' in data) || isStr(data.updatedAt, 64));
+    }
+
+    function isValidBatch(data) {
+      return data.keys().hasAll(['name', 'classLevel', 'academicYear', 'capacity', 'status'])
+        && data.keys().hasOnly([
+          'name', 'classLevel', 'academicYear', 'schedule', 'capacity',
+          'facultyName', 'assignedExamIds', 'studentCount', 'status', 'createdAt', 'updatedAt'
+        ])
+        && isNonEmptyStr(data.name, 120)
+        && data.classLevel in ['Class 11th', 'Class 12th']
+        && isNonEmptyStr(data.academicYear, 30)
+        && data.capacity is number && data.capacity >= 1 && data.capacity <= 1000
+        && data.status in ['ACTIVE', 'ARCHIVED']
+        && (!('schedule' in data) || isStr(data.schedule, 200))
+        && (!('facultyName' in data) || isStr(data.facultyName, 120))
+        && (!('assignedExamIds' in data) || isValidBoundedList(data.assignedExamIds, 100))
+        && (!('studentCount' in data) || data.studentCount is number)
+        && (!('createdAt' in data) || isStr(data.createdAt, 64))
+        && (!('updatedAt' in data) || isStr(data.updatedAt, 64));
+    }
+
+    function isValidBatchStudent(data) {
+      return data.keys().hasAll(['batchId', 'studentId', 'studentName'])
+        && data.keys().hasOnly(['batchId', 'studentId', 'studentUid', 'studentName', 'rollNumber', 'assignedAt'])
+        && isValidId(data.batchId)
+        && isValidId(data.studentId)
+        && isNonEmptyStr(data.studentName, 120)
+        && (!('studentUid' in data) || isStr(data.studentUid, 128))
+        && (!('rollNumber' in data) || isStr(data.rollNumber, 40))
+        && (!('assignedAt' in data) || isStr(data.assignedAt, 64));
+    }
+
+    function isValidQuestionFolder(data) {
+      return data.keys().hasAll(['name'])
+        && data.keys().hasOnly(['name', 'classLevel', 'chapter', 'examCategory', 'createdAt'])
+        && isNonEmptyStr(data.name, 120)
+        && (!('classLevel' in data) || isStr(data.classLevel, 40))
+        && (!('chapter' in data) || isStr(data.chapter, 120))
+        && (!('examCategory' in data) || isStr(data.examCategory, 60))
+        && (!('createdAt' in data) || isStr(data.createdAt, 64));
+    }
+
+    function isValidQuestion(data) {
+      return data.keys().hasAll([
+          'title', 'questionText', 'questionType', 'correctAnswer',
+          'positiveMarks', 'negativeMarks', 'difficulty', 'classLevel', 'examCategory'
+        ])
+        && data.keys().hasOnly([
+          'folderId', 'folderName', 'title', 'questionText', 'questionImageUrl',
+          'questionType', 'options', 'correctAnswer', 'explanation', 'positiveMarks',
+          'negativeMarks', 'difficulty', 'classLevel', 'chapter', 'topic',
+          'examCategory', 'createdAt', 'updatedAt'
+        ])
+        && isNonEmptyStr(data.title, 250)
+        && isNonEmptyStr(data.questionText, 15000)
+        && data.questionType in ['SINGLE_MCQ', 'MULTI_MCQ', 'NUMERICAL', 'INTEGER', 'IMAGE_BASED']
+        && isStr(data.correctAnswer, 500)
+        && data.positiveMarks is number
+        && data.negativeMarks is number
+        && data.difficulty in ['EASY', 'MEDIUM', 'HARD']
+        && data.classLevel in ['Class 11th', 'Class 12th']
+        && data.examCategory in ['JEE Main', 'JEE Advanced', 'MHT-CET']
+        && (!('folderId' in data) || isStr(data.folderId, 128))
+        && (!('folderName' in data) || isStr(data.folderName, 120))
+        && (!('questionImageUrl' in data) || isStr(data.questionImageUrl, 1000))
+        && (!('options' in data) || isValidBoundedList(data.options, 8))
+        && (!('explanation' in data) || isStr(data.explanation, 10000))
+        && (!('chapter' in data) || isStr(data.chapter, 120))
+        && (!('topic' in data) || isStr(data.topic, 120))
+        && (!('createdAt' in data) || isStr(data.createdAt, 64))
+        && (!('updatedAt' in data) || isStr(data.updatedAt, 64));
+    }
+
+    function isValidExam(data) {
+      return data.keys().hasAll(['title', 'code', 'classLevel', 'target', 'durationMinutes', 'totalMarks', 'status'])
+        && data.keys().hasOnly([
+          'title', 'code', 'classLevel', 'target', 'subject', 'examTag', 'folderName', 'examType',
+          'durationMinutes', 'totalMarks', 'passingMarks', 'questionCount', 'openingDate', 'startAt', 'endAt',
+          'status', 'isPublic', 'webcamEnabled', 'randomizeQuestions', 'assignedCount', 'assignedBatchIds',
+          'pdfUrl', 'answerKeyNotes', 'instructions', 'createdAt', 'updatedAt'
+        ])
+        && isNonEmptyStr(data.title, 200)
+        && isNonEmptyStr(data.code, 40)
+        && data.classLevel in ['Class 11th', 'Class 12th', 'All Classes']
+        && data.target in ['JEE Main', 'JEE Advanced', 'MHT-CET', 'NEET']
+        && data.durationMinutes is number && data.durationMinutes >= 1 && data.durationMinutes <= 600
+        && data.totalMarks is number && data.totalMarks >= 0
+        && data.status in ['LIVE', 'DRAFT']
+        && (!('subject' in data) || isStr(data.subject, 80))
+        && (!('examTag' in data) || isStr(data.examTag, 80))
+        && (!('folderName' in data) || isStr(data.folderName, 120))
+        && (!('examType' in data) || isStr(data.examType, 60))
+        && (!('passingMarks' in data) || (data.passingMarks is number && data.passingMarks >= 0))
+        && (!('questionCount' in data) || data.questionCount is number)
+        && (!('openingDate' in data) || isStr(data.openingDate, 40))
+        && (!('startAt' in data) || isStr(data.startAt, 64))
+        && (!('endAt' in data) || isStr(data.endAt, 64))
+        && (!('isPublic' in data) || data.isPublic is bool)
+        && (!('webcamEnabled' in data) || data.webcamEnabled is bool)
+        && (!('randomizeQuestions' in data) || data.randomizeQuestions is bool)
+        && (!('assignedCount' in data) || data.assignedCount is number)
+        && (!('assignedBatchIds' in data) || isValidBoundedList(data.assignedBatchIds, 50))
+        && (!('pdfUrl' in data) || isStr(data.pdfUrl, 1000))
+        && (!('answerKeyNotes' in data) || isStr(data.answerKeyNotes, 5000))
+        && (!('instructions' in data) || isStr(data.instructions, 5000))
+        && (!('createdAt' in data) || isStr(data.createdAt, 64))
+        && (!('updatedAt' in data) || isStr(data.updatedAt, 64));
+    }
+
+    function isValidExamQuestion(data) {
+      return data.keys().hasAll([
+          'examId', 'examStatus', 'orderIndex', 'questionText',
+          'questionType', 'correctAnswer', 'positiveMarks', 'negativeMarks'
+        ])
+        && data.keys().hasOnly([
+          'examId', 'examStatus', 'orderIndex', 'title', 'subject', 'questionText',
+          'questionImageUrl', 'questionType', 'options', 'correctAnswer', 'explanation',
+          'positiveMarks', 'negativeMarks', 'difficulty', 'chapter', 'topic', 'createdAt'
+        ])
+        && isValidId(data.examId)
+        && data.examStatus in ['LIVE', 'DRAFT']
+        && data.orderIndex is number
+        && (isNonEmptyStr(data.questionText, 15000) || (isStr(data.questionText, 15000) && 'questionImageUrl' in data && isNonEmptyStr(data.questionImageUrl, 1000)))
+        && data.questionType in ['SINGLE_MCQ', 'MULTI_MCQ', 'NUMERICAL', 'INTEGER', 'IMAGE_BASED']
+        && isStr(data.correctAnswer, 500)
+        && data.positiveMarks is number
+        && data.negativeMarks is number
+        && (!('title' in data) || isStr(data.title, 250))
+        && (!('subject' in data) || isStr(data.subject, 80))
+        && (!('questionImageUrl' in data) || isStr(data.questionImageUrl, 1000))
+        && (!('options' in data) || isValidBoundedList(data.options, 8))
+        && (!('explanation' in data) || isStr(data.explanation, 10000))
+        && (!('difficulty' in data) || data.difficulty in ['EASY', 'MEDIUM', 'HARD'])
+        && (!('chapter' in data) || isStr(data.chapter, 120))
+        && (!('topic' in data) || isStr(data.topic, 120))
+        && (!('createdAt' in data) || isStr(data.createdAt, 64));
+    }
+
+    function isValidExamAssignment(data) {
+      return data.keys().hasAll(['examId', 'studentId', 'studentUid'])
+        && data.keys().hasOnly(['examId', 'studentId', 'studentUid', 'studentName', 'batchId', 'assignedAt'])
+        && isValidId(data.examId)
+        && isValidId(data.studentId)
+        && isNonEmptyStr(data.studentUid, 128)
+        && (!('studentName' in data) || isStr(data.studentName, 120))
+        && (!('batchId' in data) || isStr(data.batchId, 128))
+        && (!('assignedAt' in data) || isStr(data.assignedAt, 64));
+    }
+
+    function isValidExamAttempt(data) {
+      return data.keys().hasAll(['examId', 'examTitle', 'studentUid', 'studentName', 'status', 'startedAt', 'totalMarks'])
+        && data.keys().hasOnly([
+          'examId', 'examTitle', 'examCode', 'studentUid', 'studentId', 'studentName',
+          'rollNumber', 'classLevel', 'startedAt', 'submittedAt', 'expiresAt', 'status',
+          'answers', 'questionResults', 'autoScore', 'manualAdjustment', 'finalScore',
+          'totalMarks', 'percentage', 'accuracy', 'correctCount', 'incorrectCount',
+          'unattemptedCount', 'resultsPublished', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.examId)
+        && isNonEmptyStr(data.examTitle, 200)
+        && isNonEmptyStr(data.studentUid, 128)
+        && isNonEmptyStr(data.studentName, 120)
+        && data.status in ['IN_PROGRESS', 'SUBMITTED', 'EVALUATED']
+        && isNonEmptyStr(data.startedAt, 64)
+        && data.totalMarks is number
+        && (!('examCode' in data) || isStr(data.examCode, 40))
+        && (!('studentId' in data) || isStr(data.studentId, 128))
+        && (!('rollNumber' in data) || isStr(data.rollNumber, 40))
+        && (!('classLevel' in data) || isStr(data.classLevel, 40))
+        && (!('submittedAt' in data) || isStr(data.submittedAt, 64))
+        && (!('expiresAt' in data) || isStr(data.expiresAt, 64))
+        && (!('answers' in data) || data.answers is map)
+        && (!('questionResults' in data) || isValidBoundedList(data.questionResults, 200))
+        && (!('autoScore' in data) || data.autoScore is number)
+        && (!('manualAdjustment' in data) || data.manualAdjustment is number)
+        && (!('finalScore' in data) || data.finalScore is number)
+        && (!('percentage' in data) || data.percentage is number)
+        && (!('accuracy' in data) || data.accuracy is number)
+        && (!('correctCount' in data) || data.correctCount is number)
+        && (!('incorrectCount' in data) || data.incorrectCount is number)
+        && (!('unattemptedCount' in data) || data.unattemptedCount is number)
+        && (!('resultsPublished' in data) || data.resultsPublished is bool)
+        && (!('createdAt' in data) || isStr(data.createdAt, 64))
+        && (!('updatedAt' in data) || isStr(data.updatedAt, 64));
+    }
+
+    function isValidEvaluationLog(data) {
+      return data.keys().hasAll(['attemptId', 'examId', 'previousScore', 'newScore', 'reason', 'evaluatorEmail', 'createdAt'])
+        && data.keys().hasOnly([
+          'attemptId', 'examId', 'examTitle', 'studentName',
+          'previousScore', 'newScore', 'adjustmentDelta', 'reason', 'evaluatorEmail', 'createdAt'
+        ])
+        && isValidId(data.attemptId)
+        && isValidId(data.examId)
+        && data.previousScore is number
+        && data.newScore is number
+        && isNonEmptyStr(data.reason, 500)
+        && isNonEmptyStr(data.evaluatorEmail, 254)
+        && isNonEmptyStr(data.createdAt, 64)
+        && (!('examTitle' in data) || isStr(data.examTitle, 200))
+        && (!('studentName' in data) || isStr(data.studentName, 120))
+        && (!('adjustmentDelta' in data) || data.adjustmentDelta is number);
+    }
+
+    function isValidAttendance(data) {
+      return data.keys().hasAll(['date', 'batchId', 'studentId', 'studentName', 'status'])
+        && data.keys().hasOnly([
+          'date', 'batchId', 'batchName', 'studentId', 'studentUid',
+          'studentName', 'rollNumber', 'status', 'remarks', 'createdAt', 'updatedAt'
+        ])
+        && isNonEmptyStr(data.date, 20)
+        && isValidId(data.batchId)
+        && isValidId(data.studentId)
+        && isNonEmptyStr(data.studentName, 120)
+        && data.status in ['PRESENT', 'ABSENT']
+        && (!('batchName' in data) || isStr(data.batchName, 120))
+        && (!('studentUid' in data) || isStr(data.studentUid, 128))
+        && (!('rollNumber' in data) || isStr(data.rollNumber, 40))
+        && (!('remarks' in data) || isStr(data.remarks, 300))
+        && (!('createdAt' in data) || isStr(data.createdAt, 64))
+        && (!('updatedAt' in data) || isStr(data.updatedAt, 64));
+    }
+
+    function isValidStudyMaterial(data) {
+      return data.keys().hasAll(['title', 'classLevel', 'subject', 'category', 'fileUrl', 'fileName'])
+        && data.keys().hasOnly([
+          'title', 'description', 'classLevel', 'subject', 'chapter',
+          'category', 'fileUrl', 'fileName', 'fileSize', 'downloadCount', 'createdAt', 'updatedAt'
+        ])
+        && isNonEmptyStr(data.title, 200)
+        && data.classLevel in ['Class 11th', 'Class 12th', 'Both']
+        && isNonEmptyStr(data.subject, 80)
+        && data.category in ['Notes', 'Formula Sheets', 'DPP', 'PDF', 'Practice Worksheets']
+        && isNonEmptyStr(data.fileUrl, 1000)
+        && isNonEmptyStr(data.fileName, 255)
+        && (!('description' in data) || isStr(data.description, 1000))
+        && (!('chapter' in data) || isStr(data.chapter, 120))
+        && (!('fileSize' in data) || isStr(data.fileSize, 40))
+        && (!('downloadCount' in data) || data.downloadCount is number)
+        && (!('createdAt' in data) || isStr(data.createdAt, 64))
+        && (!('updatedAt' in data) || isStr(data.updatedAt, 64));
+    }
+
+    function isValidNotification(data) {
+      return data.keys().hasAll(['title', 'message', 'type', 'targetType', 'createdAt'])
+        && data.keys().hasOnly([
+          'title', 'message', 'type', 'targetType', 'targetBatchId',
+          'targetBatchName', 'targetStudentUid', 'readBy', 'createdAt'
+        ])
+        && isNonEmptyStr(data.title, 200)
+        && isNonEmptyStr(data.message, 2000)
+        && data.type in ['EXAM_REMINDER', 'RESULT', 'PAYMENT', 'MATERIAL', 'GENERAL']
+        && data.targetType in ['ALL', 'BATCH', 'STUDENT']
+        && isNonEmptyStr(data.createdAt, 64)
+        && (!('targetBatchId' in data) || isStr(data.targetBatchId, 128))
+        && (!('targetBatchName' in data) || isStr(data.targetBatchName, 120))
+        && (!('targetStudentUid' in data) || isStr(data.targetStudentUid, 128))
+        && (!('readBy' in data) || isValidBoundedList(data.readBy, 500));
+    }
+
+    function isValidCourse(data) {
+      return data.keys().hasAll(['name', 'category', 'price', 'status'])
+        && data.keys().hasOnly([
+          'name', 'description', 'category', 'classLevel', 'price',
+          'thumbnailUrl', 'status', 'enrolledCount', 'modules', 'createdAt', 'updatedAt'
+        ])
+        && isNonEmptyStr(data.name, 200)
+        && data.category in ['JEE Main', 'JEE Advanced', 'MHT-CET', 'Foundation']
+        && data.price is number && data.price >= 0
+        && data.status in ['PUBLISHED', 'DRAFT']
+        && (!('description' in data) || isStr(data.description, 2000))
+        && (!('classLevel' in data) || isStr(data.classLevel, 40))
+        && (!('thumbnailUrl' in data) || isStr(data.thumbnailUrl, 1000))
+        && (!('enrolledCount' in data) || data.enrolledCount is number)
+        && (!('modules' in data) || isValidBoundedList(data.modules, 40))
+        && (!('createdAt' in data) || isStr(data.createdAt, 64))
+        && (!('updatedAt' in data) || isStr(data.updatedAt, 64));
+    }
+
+    function isValidTestSeries(data) {
+      return data.keys().hasAll(['title', 'price', 'mockTestCount', 'examCategory', 'status'])
+        && data.keys().hasOnly([
+          'title', 'description', 'price', 'mockTestCount', 'classLevel',
+          'examCategory', 'status', 'examIds', 'createdAt', 'updatedAt'
+        ])
+        && isNonEmptyStr(data.title, 200)
+        && data.price is number && data.price >= 0
+        && data.mockTestCount is number && data.mockTestCount >= 0
+        && data.examCategory in ['JEE Main Mathematics', 'JEE Advanced Mathematics', 'MHT-CET Mathematics']
+        && data.status in ['PUBLISHED', 'DRAFT']
+        && (!('description' in data) || isStr(data.description, 2000))
+        && (!('classLevel' in data) || isStr(data.classLevel, 40))
+        && (!('examIds' in data) || isValidBoundedList(data.examIds, 100))
+        && (!('createdAt' in data) || isStr(data.createdAt, 64))
+        && (!('updatedAt' in data) || isStr(data.updatedAt, 64));
+    }
+
+    function isValidPayment(data) {
+      return data.keys().hasAll(['studentUid', 'studentName', 'itemType', 'itemId', 'itemTitle', 'amount', 'utr', 'status', 'submissionDate'])
+        && data.keys().hasOnly([
+          'studentUid', 'studentId', 'studentName', 'studentEmail', 'itemType',
+          'itemId', 'itemTitle', 'amount', 'utr', 'status', 'submissionDate',
+          'verifiedBy', 'verifiedAt', 'rejectionReason', 'createdAt', 'updatedAt'
+        ])
+        && isNonEmptyStr(data.studentUid, 128)
+        && isNonEmptyStr(data.studentName, 120)
+        && data.itemType in ['COURSE', 'TEST_SERIES']
+        && isValidId(data.itemId)
+        && isNonEmptyStr(data.itemTitle, 200)
+        && data.amount is number && data.amount >= 0
+        && data.utr is string && data.utr.size() >= 6 && data.utr.size() <= 40 && data.utr.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.status in ['PENDING', 'APPROVED', 'REJECTED']
+        && isNonEmptyStr(data.submissionDate, 64)
+        && (!('studentId' in data) || isStr(data.studentId, 128))
+        && (!('studentEmail' in data) || isStr(data.studentEmail, 254))
+        && (!('verifiedBy' in data) || isStr(data.verifiedBy, 254))
+        && (!('verifiedAt' in data) || isStr(data.verifiedAt, 64))
+        && (!('rejectionReason' in data) || isStr(data.rejectionReason, 400))
+        && (!('createdAt' in data) || isStr(data.createdAt, 64))
+        && (!('updatedAt' in data) || isStr(data.updatedAt, 64));
+    }
+
+    function isValidEnrollment(data) {
+      return data.keys().hasAll(['studentUid', 'itemType', 'itemId', 'itemTitle', 'status', 'enrolledAt'])
+        && data.keys().hasOnly([
+          'studentUid', 'studentId', 'studentName', 'itemType', 'itemId',
+          'itemTitle', 'paymentId', 'status', 'enrolledAt'
+        ])
+        && isNonEmptyStr(data.studentUid, 128)
+        && data.itemType in ['COURSE', 'TEST_SERIES']
+        && isValidId(data.itemId)
+        && isNonEmptyStr(data.itemTitle, 200)
+        && data.status in ['ACTIVE', 'REVOKED']
+        && isNonEmptyStr(data.enrolledAt, 64)
+        && (!('studentId' in data) || isStr(data.studentId, 128))
+        && (!('studentName' in data) || isStr(data.studentName, 120))
+        && (!('paymentId' in data) || isStr(data.paymentId, 128));
+    }
+
+    // ------------------------------------------------------------------------
+    // Collection Rules
+    // ------------------------------------------------------------------------
+
+    // Test connection probe
+    match /test/{docId} {
+      allow get: if isValidId(docId);
+    }
+
+    // Admins
+    match /admins/{uid} {
+      allow get: if isValidId(uid) && (isAdmin() || (isSignedIn() && request.auth.uid == uid));
+      allow list: if isPrimaryAdmin();
+      allow create, update: if isValidId(uid) && isAdmin() && isValidAdmin(incoming());
+      allow delete: if isValidId(uid) && isPrimaryAdmin();
+    }
+
+    // Institute Settings (Public branding, Admin write)
+    match /settings/{settingId} {
+      allow get: if isValidId(settingId);
+      allow list: if resource.data.instituteName is string;
+      allow create, update: if isValidId(settingId) && isAdmin() && isValidSettings(incoming());
+      allow delete: if false;
+    }
+
+    // Students (PII protected)
+    match /students/{studentId} {
+      allow get: if isValidId(studentId) && (isAdmin() || (isSignedIn() && (existing().uid == request.auth.uid || studentId == request.auth.uid)));
+      allow list: if isPrimaryAdmin() || (isSignedIn() && resource.data.uid == request.auth.uid);
+      allow create: if isValidId(studentId) && isValidStudent(incoming()) && (
+        isAdmin() ||
+        (isSignedIn() && incoming().uid == request.auth.uid && incoming().origin in ['PORTAL_SIGNUP', 'QUICK_JOIN'] && incoming().status in ['ACTIVE', 'QUICK_JOIN'])
+      );
+      allow update: if isValidId(studentId) && isValidStudent(incoming()) && (
+        isAdmin() ||
+        (isSignedIn() && existing().uid == request.auth.uid && incoming().uid == existing().uid &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['name', 'mobile', 'whatsapp', 'photoUrl', 'classLevel', 'targetExam', 'updatedAt']))
+      );
+      allow delete: if isValidId(studentId) && isAdmin();
+    }
+
+    // Faculty Directory (Management-only, PII isolated)
+    match /faculty/{facultyId} {
+      allow get: if isValidId(facultyId) && isAdmin();
+      allow list: if isPrimaryAdmin();
+      allow create, update: if isValidId(facultyId) && isAdmin() && isValidFaculty(incoming());
+      allow delete: if isValidId(facultyId) && isAdmin();
+    }
+
+    // Batches
+    match /batches/{batchId} {
+      allow get: if isValidId(batchId) && isSignedIn();
+      allow list: if isPrimaryAdmin() || (isSignedIn() && resource.data.status == 'ACTIVE');
+      allow create, update: if isValidId(batchId) && isAdmin() && isValidBatch(incoming());
+      allow delete: if isValidId(batchId) && isAdmin();
+    }
+
+    // Batch Students
+    match /batchStudents/{mappingId} {
+      allow get: if isValidId(mappingId) && (isAdmin() || (isSignedIn() && existing().studentUid == request.auth.uid));
+      allow list: if isPrimaryAdmin() || (isSignedIn() && resource.data.studentUid == request.auth.uid);
+      allow create, update: if isValidId(mappingId) && isAdmin() && isValidBatchStudent(incoming());
+      allow delete: if isValidId(mappingId) && isAdmin();
+    }
+
+    // Question Folders (Admin only)
+    match /questionFolders/{folderId} {
+      allow get: if isValidId(folderId) && isAdmin();
+      allow list: if isPrimaryAdmin();
+      allow create, update: if isValidId(folderId) && isAdmin() && isValidQuestionFolder(incoming());
+      allow delete: if isValidId(folderId) && isAdmin();
+    }
+
+    // Master Question Bank (Admin only - students never scrape raw bank)
+    match /questions/{questionId} {
+      allow get: if isValidId(questionId) && isAdmin();
+      allow list: if isPrimaryAdmin();
+      allow create, update: if isValidId(questionId) && isAdmin() && isValidQuestion(incoming());
+      allow delete: if isValidId(questionId) && isAdmin();
+    }
+
+    // Exams (Isolated examination headers)
+    match /exams/{examId} {
+      allow get: if isValidId(examId) && (isAdmin() || (isSignedIn() && existing().status == 'LIVE'));
+      allow list: if isPrimaryAdmin() || (isSignedIn() && resource.data.status == 'LIVE');
+      allow create, update: if isValidId(examId) && isAdmin() && isValidExam(incoming());
+      allow delete: if isValidId(examId) && isAdmin();
+
+      // Independent Question Collection per Exam
+      match /questions/{questionId} {
+        allow get: if isValidId(examId) && isValidId(questionId) && (isAdmin() || (isSignedIn() && existing().examStatus == 'LIVE'));
+        allow list: if isPrimaryAdmin() || (isSignedIn() && resource.data.examStatus == 'LIVE');
+        allow create, update: if isValidId(examId) && isValidId(questionId) && isAdmin() && isValidExamQuestion(incoming()) && incoming().examId == examId;
+        allow delete: if isValidId(examId) && isValidId(questionId) && isAdmin();
+      }
+    }
+
+    // Exam Assignments
+    match /examAssignments/{assignmentId} {
+      allow get: if isValidId(assignmentId) && (isAdmin() || (isSignedIn() && existing().studentUid == request.auth.uid));
+      allow list: if isPrimaryAdmin() || (isSignedIn() && resource.data.studentUid == request.auth.uid);
+      allow create, update: if isValidId(assignmentId) && isAdmin() && isValidExamAssignment(incoming());
+      allow delete: if isValidId(assignmentId) && isAdmin();
+    }
+
+    // Exam Attempts (Terminal state locked for students)
+    match /examAttempts/{attemptId} {
+      allow get: if isValidId(attemptId) && (isAdmin() || (isSignedIn() && existing().studentUid == request.auth.uid));
+      allow list: if isPrimaryAdmin() || (isSignedIn() && resource.data.studentUid == request.auth.uid);
+      allow create: if isValidId(attemptId) && isSignedIn() && isValidExamAttempt(incoming()) && (
+        isAdmin() ||
+        (incoming().studentUid == request.auth.uid && incoming().status == 'IN_PROGRESS')
+      );
+      allow update: if isValidId(attemptId) && isSignedIn() && isValidExamAttempt(incoming()) && (
+        isAdmin() ||
+        (existing().studentUid == request.auth.uid &&
+          existing().status == 'IN_PROGRESS' &&
+          incoming().studentUid == existing().studentUid &&
+          incoming().examId == existing().examId &&
+          incoming().startedAt == existing().startedAt &&
+          incoming().status in ['IN_PROGRESS', 'SUBMITTED'] &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'answers', 'questionResults', 'autoScore', 'finalScore', 'percentage',
+            'accuracy', 'correctCount', 'incorrectCount', 'unattemptedCount',
+            'submittedAt', 'status', 'updatedAt'
+          ]))
+      );
+      allow delete: if isValidId(attemptId) && isAdmin();
+    }
+
+    // Immutable Evaluation Audit Logs
+    match /evaluationLogs/{logId} {
+      allow get: if isValidId(logId) && isAdmin();
+      allow list: if isPrimaryAdmin();
+      allow create: if isValidId(logId) && isAdmin() && isValidEvaluationLog(incoming());
+      allow update, delete: if false;
+    }
+
+    // Attendance
+    match /attendance/{attendanceId} {
+      allow get: if isValidId(attendanceId) && (isAdmin() || (isSignedIn() && existing().studentUid == request.auth.uid));
+      allow list: if isPrimaryAdmin() || (isSignedIn() && resource.data.studentUid == request.auth.uid);
+      allow create, update: if isValidId(attendanceId) && isAdmin() && isValidAttendance(incoming());
+      allow delete: if isValidId(attendanceId) && isAdmin();
+    }
+
+    // Study Materials
+    match /studyMaterials/{materialId} {
+      allow get: if isValidId(materialId) && isSignedIn();
+      allow list: if isPrimaryAdmin() || (isSignedIn() && resource.data.subject == 'Mathematics');
+      allow create: if isValidId(materialId) && isAdmin() && isValidStudyMaterial(incoming());
+      allow update: if isValidId(materialId) && isValidStudyMaterial(incoming()) && (
+        isAdmin() ||
+        (isSignedIn() && incoming().diff(existing()).affectedKeys().hasOnly(['downloadCount']) && incoming().downloadCount == existing().downloadCount + 1)
+      );
+      allow delete: if isValidId(materialId) && isAdmin();
+    }
+
+    // Notifications
+    match /notifications/{notificationId} {
+      allow get: if isValidId(notificationId) && isSignedIn();
+      allow list: if isPrimaryAdmin() || (isSignedIn() && (resource.data.targetType in ['ALL', 'BATCH'] || resource.data.targetStudentUid == request.auth.uid));
+      allow create: if isValidId(notificationId) && isAdmin() && isValidNotification(incoming());
+      allow update: if isValidId(notificationId) && isValidNotification(incoming()) && (
+        isAdmin() ||
+        (isSignedIn() && incoming().diff(existing()).affectedKeys().hasOnly(['readBy']))
+      );
+      allow delete: if isValidId(notificationId) && isAdmin();
+    }
+
+    // Courses
+    match /courses/{courseId} {
+      allow get: if isValidId(courseId) && (isAdmin() || existing().status == 'PUBLISHED');
+      allow list: if isPrimaryAdmin() || resource.data.status == 'PUBLISHED';
+      allow create, update: if isValidId(courseId) && isAdmin() && isValidCourse(incoming());
+      allow delete: if isValidId(courseId) && isAdmin();
+    }
+
+    // Test Series
+    match /testSeries/{seriesId} {
+      allow get: if isValidId(seriesId) && (isAdmin() || existing().status == 'PUBLISHED');
+      allow list: if isPrimaryAdmin() || resource.data.status == 'PUBLISHED';
+      allow create, update: if isValidId(seriesId) && isAdmin() && isValidTestSeries(incoming());
+      allow delete: if isValidId(seriesId) && isAdmin();
+    }
+
+    // Payments (Strict UTR verification)
+    match /payments/{paymentId} {
+      allow get: if isValidId(paymentId) && (isAdmin() || (isSignedIn() && existing().studentUid == request.auth.uid));
+      allow list: if isPrimaryAdmin() || (isSignedIn() && resource.data.studentUid == request.auth.uid);
+      allow create: if isValidId(paymentId) && isSignedIn() && isValidPayment(incoming()) && (
+        isAdmin() ||
+        (incoming().studentUid == request.auth.uid && incoming().status == 'PENDING')
+      );
+      allow update: if isValidId(paymentId) && isAdmin() && isValidPayment(incoming());
+      allow delete: if isValidId(paymentId) && isAdmin();
+    }
+
+    // Enrollments
+    match /enrollments/{enrollmentId} {
+      allow get: if isValidId(enrollmentId) && (isAdmin() || (isSignedIn() && existing().studentUid == request.auth.uid));
+      allow list: if isPrimaryAdmin() || (isSignedIn() && resource.data.studentUid == request.auth.uid);
+      allow create, update: if isValidId(enrollmentId) && isAdmin() && isValidEnrollment(incoming());
+      allow delete: if isValidId(enrollmentId) && isAdmin();
+    }
+
+    // Multi-Tenant Isolated Institute Namespaces
+    match /tenants/{tenantId} {
+      allow read, write: if false;
+
+      match /students/{studentId} {
+        allow get: if isValidId(tenantId) && isValidId(studentId) && (isAdmin() || (isSignedIn() && (existing().uid == request.auth.uid || studentId == request.auth.uid)));
+        allow list: if isValidId(tenantId) && (isPrimaryAdmin() || (isSignedIn() && resource.data.uid == request.auth.uid));
+        allow create: if isValidId(tenantId) && isValidId(studentId) && isValidStudent(incoming()) && (
+          isAdmin() ||
+          (isSignedIn() && incoming().uid == request.auth.uid && incoming().origin in ['PORTAL_SIGNUP', 'QUICK_JOIN'] && incoming().status in ['ACTIVE', 'QUICK_JOIN'])
+        );
+        allow update: if isValidId(tenantId) && isValidId(studentId) && isValidStudent(incoming()) && (
+          isAdmin() ||
+          (isSignedIn() && existing().uid == request.auth.uid && incoming().uid == existing().uid &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['name', 'mobile', 'whatsapp', 'photoUrl', 'classLevel', 'targetExam', 'updatedAt']))
+        );
+        allow delete: if isValidId(tenantId) && isValidId(studentId) && isAdmin();
+      }
+
+      match /exams/{examId} {
+        allow get: if isValidId(tenantId) && isValidId(examId) && (isAdmin() || (isSignedIn() && existing().status == 'LIVE'));
+        allow list: if isValidId(tenantId) && (isPrimaryAdmin() || (isSignedIn() && resource.data.status == 'LIVE'));
+        allow create, update: if isValidId(tenantId) && isValidId(examId) && isAdmin() && isValidExam(incoming());
+        allow delete: if isValidId(tenantId) && isValidId(examId) && isAdmin();
+
+        match /questions/{questionId} {
+          allow get: if isValidId(tenantId) && isValidId(examId) && isValidId(questionId) && (isAdmin() || (isSignedIn() && existing().examStatus == 'LIVE'));
+          allow list: if isValidId(tenantId) && isValidId(examId) && (isPrimaryAdmin() || (isSignedIn() && resource.data.examStatus == 'LIVE'));
+          allow create, update: if isValidId(tenantId) && isValidId(examId) && isValidId(questionId) && isAdmin() && isValidExamQuestion(incoming()) && incoming().examId == examId;
+          allow delete: if isValidId(tenantId) && isValidId(examId) && isValidId(questionId) && isAdmin();
+        }
+      }
+    }
+  }
+}

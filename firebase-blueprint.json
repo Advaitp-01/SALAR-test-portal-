@@ -1,0 +1,517 @@
+{
+  "entities": {
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Authorized Super Admin account record",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "format": "email", "maxLength": 254 },
+        "name": { "type": "string", "maxLength": 120 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "createdAt"]
+    },
+    "InstituteSettings": {
+      "title": "InstituteSettings",
+      "description": "Global institute branding, contact information, and portal configuration",
+      "type": "object",
+      "properties": {
+        "instituteName": { "type": "string", "maxLength": 150 },
+        "tagline": { "type": "string", "maxLength": 200 },
+        "storageTag": { "type": "string", "maxLength": 80 },
+        "logoUrl": { "type": "string", "maxLength": 1000 },
+        "logoWidth": { "type": "number" },
+        "logoHeight": { "type": "number" },
+        "heroImage": { "type": "string", "maxLength": 1000 },
+        "heroTitle": { "type": "string", "maxLength": 200 },
+        "heroSubtitle": { "type": "string", "maxLength": 400 },
+        "primaryCta": { "type": "string", "maxLength": 60 },
+        "secondaryCta": { "type": "string", "maxLength": 60 },
+        "faviconUrl": { "type": "string", "maxLength": 1000 },
+        "primaryColor": { "type": "string", "maxLength": 20 },
+        "secondaryColor": { "type": "string", "maxLength": 20 },
+        "address": { "type": "string", "maxLength": 400 },
+        "phone": { "type": "string", "maxLength": 40 },
+        "whatsapp": { "type": "string", "maxLength": 40 },
+        "email": { "type": "string", "maxLength": 254 },
+        "website": { "type": "string", "maxLength": 300 },
+        "socialLinks": { "type": "object" },
+        "portalConfig": { "type": "object" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["instituteName", "primaryColor", "secondaryColor"]
+    },
+    "StudentProfile": {
+      "title": "StudentProfile",
+      "description": "Student candidate profile, enrollment, and batch assignment",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 120 },
+        "email": { "type": "string", "maxLength": 254 },
+        "mobile": { "type": "string", "maxLength": 30 },
+        "whatsapp": { "type": "string", "maxLength": 30 },
+        "classLevel": { "type": "string", "enum": ["Class 11th", "Class 12th", "Dropper / Repeater"] },
+        "targetExam": { "type": "string", "enum": ["JEE Main", "JEE Advanced", "MHT-CET", "Boards + CET", "JEE Main + Advanced"] },
+        "rollNumber": { "type": "string", "maxLength": 40 },
+        "username": { "type": "string", "maxLength": 60 },
+        "enrollmentId": { "type": "string", "maxLength": 60 },
+        "batchId": { "type": "string", "maxLength": 128 },
+        "batchName": { "type": "string", "maxLength": 120 },
+        "origin": { "type": "string", "enum": ["PORTAL_SIGNUP", "QUICK_JOIN", "ADMIN_ADDED"] },
+        "status": { "type": "string", "enum": ["ACTIVE", "QUICK_JOIN", "INACTIVE", "SUSPENDED"] },
+        "photoUrl": { "type": "string", "maxLength": 1000 },
+        "attemptsCount": { "type": "number" },
+        "avgPercentage": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "status", "origin"]
+    },
+    "FacultyProfile": {
+      "title": "FacultyProfile",
+      "description": "Mathematics faculty directory profile (management only, no login role)",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 120 },
+        "qualification": { "type": "string", "maxLength": 150 },
+        "subjectSpecialization": { "type": "string", "maxLength": 200 },
+        "experience": { "type": "string", "maxLength": 80 },
+        "email": { "type": "string", "maxLength": 254 },
+        "contactNumber": { "type": "string", "maxLength": 30 },
+        "photoUrl": { "type": "string", "maxLength": 1000 },
+        "assignedBatches": { "type": "array" },
+        "status": { "type": "string", "enum": ["ACTIVE", "INACTIVE"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "qualification", "subjectSpecialization", "status"]
+    },
+    "Batch": {
+      "title": "Batch",
+      "description": "Mathematics academic batch",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 120 },
+        "classLevel": { "type": "string", "enum": ["Class 11th", "Class 12th"] },
+        "academicYear": { "type": "string", "maxLength": 30 },
+        "schedule": { "type": "string", "maxLength": 200 },
+        "capacity": { "type": "number" },
+        "facultyName": { "type": "string", "maxLength": 120 },
+        "assignedExamIds": { "type": "array" },
+        "studentCount": { "type": "number" },
+        "status": { "type": "string", "enum": ["ACTIVE", "ARCHIVED"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "classLevel", "academicYear", "capacity", "status"]
+    },
+    "BatchStudent": {
+      "title": "BatchStudent",
+      "description": "Mapping between a batch and an enrolled student",
+      "type": "object",
+      "properties": {
+        "batchId": { "type": "string", "maxLength": 128 },
+        "studentId": { "type": "string", "maxLength": 128 },
+        "studentUid": { "type": "string", "maxLength": 128 },
+        "studentName": { "type": "string", "maxLength": 120 },
+        "rollNumber": { "type": "string", "maxLength": 40 },
+        "assignedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["batchId", "studentId", "studentName"]
+    },
+    "QuestionFolder": {
+      "title": "QuestionFolder",
+      "description": "Folder grouping for Question Bank items",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 120 },
+        "classLevel": { "type": "string", "maxLength": 40 },
+        "chapter": { "type": "string", "maxLength": 120 },
+        "examCategory": { "type": "string", "maxLength": 60 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name"]
+    },
+    "Question": {
+      "title": "Question",
+      "description": "Mathematics question in Question Bank",
+      "type": "object",
+      "properties": {
+        "folderId": { "type": "string", "maxLength": 128 },
+        "folderName": { "type": "string", "maxLength": 120 },
+        "title": { "type": "string", "maxLength": 250 },
+        "questionText": { "type": "string", "maxLength": 15000 },
+        "questionImageUrl": { "type": "string", "maxLength": 1000 },
+        "questionType": { "type": "string", "enum": ["SINGLE_MCQ", "MULTI_MCQ", "NUMERICAL", "INTEGER", "IMAGE_BASED"] },
+        "options": { "type": "array" },
+        "correctAnswer": { "type": "string", "maxLength": 500 },
+        "explanation": { "type": "string", "maxLength": 10000 },
+        "positiveMarks": { "type": "number" },
+        "negativeMarks": { "type": "number" },
+        "difficulty": { "type": "string", "enum": ["EASY", "MEDIUM", "HARD"] },
+        "classLevel": { "type": "string", "enum": ["Class 11th", "Class 12th"] },
+        "chapter": { "type": "string", "maxLength": 120 },
+        "topic": { "type": "string", "maxLength": 120 },
+        "examCategory": { "type": "string", "enum": ["JEE Main", "JEE Advanced", "MHT-CET"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "questionText", "questionType", "correctAnswer", "positiveMarks", "negativeMarks", "difficulty", "classLevel", "examCategory"]
+    },
+    "Exam": {
+      "title": "Exam",
+      "description": "Isolated examination paper",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "maxLength": 200 },
+        "code": { "type": "string", "maxLength": 40 },
+        "classLevel": { "type": "string", "enum": ["Class 11th", "Class 12th", "All Classes"] },
+        "target": { "type": "string", "enum": ["JEE Main", "JEE Advanced", "MHT-CET", "NEET"] },
+        "subject": { "type": "string", "maxLength": 80 },
+        "examTag": { "type": "string", "maxLength": 80 },
+        "folderName": { "type": "string", "maxLength": 120 },
+        "examType": { "type": "string", "maxLength": 60 },
+        "durationMinutes": { "type": "number" },
+        "totalMarks": { "type": "number" },
+        "passingMarks": { "type": "number" },
+        "questionCount": { "type": "number" },
+        "openingDate": { "type": "string", "maxLength": 40 },
+        "startAt": { "type": "string", "maxLength": 64 },
+        "endAt": { "type": "string", "maxLength": 64 },
+        "status": { "type": "string", "enum": ["LIVE", "DRAFT"] },
+        "isPublic": { "type": "boolean" },
+        "webcamEnabled": { "type": "boolean" },
+        "randomizeQuestions": { "type": "boolean" },
+        "assignedCount": { "type": "number" },
+        "assignedBatchIds": { "type": "array" },
+        "pdfUrl": { "type": "string", "maxLength": 1000 },
+        "answerKeyNotes": { "type": "string", "maxLength": 5000 },
+        "instructions": { "type": "string", "maxLength": 5000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "code", "classLevel", "target", "durationMinutes", "totalMarks", "status"]
+    },
+    "ExamQuestion": {
+      "title": "ExamQuestion",
+      "description": "Isolated question copy belonging strictly to one examination",
+      "type": "object",
+      "properties": {
+        "examId": { "type": "string", "maxLength": 128 },
+        "examStatus": { "type": "string", "enum": ["LIVE", "DRAFT"] },
+        "orderIndex": { "type": "number" },
+        "title": { "type": "string", "maxLength": 250 },
+        "subject": { "type": "string", "maxLength": 80 },
+        "questionText": { "type": "string", "maxLength": 15000 },
+        "questionImageUrl": { "type": "string", "maxLength": 1000 },
+        "questionType": { "type": "string", "enum": ["SINGLE_MCQ", "MULTI_MCQ", "NUMERICAL", "INTEGER", "IMAGE_BASED"] },
+        "options": { "type": "array" },
+        "correctAnswer": { "type": "string", "maxLength": 500 },
+        "explanation": { "type": "string", "maxLength": 10000 },
+        "positiveMarks": { "type": "number" },
+        "negativeMarks": { "type": "number" },
+        "difficulty": { "type": "string", "enum": ["EASY", "MEDIUM", "HARD"] },
+        "chapter": { "type": "string", "maxLength": 120 },
+        "topic": { "type": "string", "maxLength": 120 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["examId", "examStatus", "orderIndex", "questionType", "correctAnswer", "positiveMarks", "negativeMarks"]
+    },
+    "ExamAssignment": {
+      "title": "ExamAssignment",
+      "description": "Student assignment to an examination",
+      "type": "object",
+      "properties": {
+        "examId": { "type": "string", "maxLength": 128 },
+        "studentId": { "type": "string", "maxLength": 128 },
+        "studentUid": { "type": "string", "maxLength": 128 },
+        "studentName": { "type": "string", "maxLength": 120 },
+        "batchId": { "type": "string", "maxLength": 128 },
+        "assignedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["examId", "studentId", "studentUid"]
+    },
+    "ExamAttempt": {
+      "title": "ExamAttempt",
+      "description": "Student CBT examination attempt, responses, and scores",
+      "type": "object",
+      "properties": {
+        "examId": { "type": "string", "maxLength": 128 },
+        "examTitle": { "type": "string", "maxLength": 200 },
+        "examCode": { "type": "string", "maxLength": 40 },
+        "studentUid": { "type": "string", "maxLength": 128 },
+        "studentId": { "type": "string", "maxLength": 128 },
+        "studentName": { "type": "string", "maxLength": 120 },
+        "rollNumber": { "type": "string", "maxLength": 40 },
+        "classLevel": { "type": "string", "maxLength": 40 },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "submittedAt": { "type": "string", "format": "date-time" },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["IN_PROGRESS", "SUBMITTED", "EVALUATED"] },
+        "answers": { "type": "object" },
+        "questionResults": { "type": "array" },
+        "autoScore": { "type": "number" },
+        "manualAdjustment": { "type": "number" },
+        "finalScore": { "type": "number" },
+        "totalMarks": { "type": "number" },
+        "percentage": { "type": "number" },
+        "accuracy": { "type": "number" },
+        "correctCount": { "type": "number" },
+        "incorrectCount": { "type": "number" },
+        "unattemptedCount": { "type": "number" },
+        "resultsPublished": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["examId", "examTitle", "studentUid", "studentName", "status", "startedAt", "totalMarks"]
+    },
+    "EvaluationLog": {
+      "title": "EvaluationLog",
+      "description": "Audit log for manual score adjustments",
+      "type": "object",
+      "properties": {
+        "attemptId": { "type": "string", "maxLength": 128 },
+        "examId": { "type": "string", "maxLength": 128 },
+        "examTitle": { "type": "string", "maxLength": 200 },
+        "studentName": { "type": "string", "maxLength": 120 },
+        "previousScore": { "type": "number" },
+        "newScore": { "type": "number" },
+        "adjustmentDelta": { "type": "number" },
+        "reason": { "type": "string", "maxLength": 500 },
+        "evaluatorEmail": { "type": "string", "maxLength": 254 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["attemptId", "examId", "previousScore", "newScore", "reason", "evaluatorEmail", "createdAt"]
+    },
+    "AttendanceRecord": {
+      "title": "AttendanceRecord",
+      "description": "Student batch attendance record",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string", "maxLength": 20 },
+        "batchId": { "type": "string", "maxLength": 128 },
+        "batchName": { "type": "string", "maxLength": 120 },
+        "studentId": { "type": "string", "maxLength": 128 },
+        "studentUid": { "type": "string", "maxLength": 128 },
+        "studentName": { "type": "string", "maxLength": 120 },
+        "rollNumber": { "type": "string", "maxLength": 40 },
+        "status": { "type": "string", "enum": ["PRESENT", "ABSENT"] },
+        "remarks": { "type": "string", "maxLength": 300 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["date", "batchId", "studentId", "studentName", "status"]
+    },
+    "StudyMaterial": {
+      "title": "StudyMaterial",
+      "description": "Mathematics study materials, formula sheets, DPPs, and PDFs",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "maxLength": 200 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "classLevel": { "type": "string", "enum": ["Class 11th", "Class 12th", "Both"] },
+        "subject": { "type": "string", "maxLength": 80 },
+        "chapter": { "type": "string", "maxLength": 120 },
+        "category": { "type": "string", "enum": ["Notes", "Formula Sheets", "DPP", "PDF", "Practice Worksheets"] },
+        "fileUrl": { "type": "string", "maxLength": 1000 },
+        "fileName": { "type": "string", "maxLength": 255 },
+        "fileSize": { "type": "string", "maxLength": 40 },
+        "downloadCount": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "classLevel", "subject", "category", "fileUrl", "fileName"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "Institute announcements, reminders, and alerts",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "maxLength": 200 },
+        "message": { "type": "string", "maxLength": 2000 },
+        "type": { "type": "string", "enum": ["EXAM_REMINDER", "RESULT", "PAYMENT", "MATERIAL", "GENERAL"] },
+        "targetType": { "type": "string", "enum": ["ALL", "BATCH", "STUDENT"] },
+        "targetBatchId": { "type": "string", "maxLength": 128 },
+        "targetBatchName": { "type": "string", "maxLength": 120 },
+        "targetStudentUid": { "type": "string", "maxLength": 128 },
+        "readBy": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "message", "type", "targetType", "createdAt"]
+    },
+    "Course": {
+      "title": "Course",
+      "description": "Mathematics course package with modules and chapters",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 200 },
+        "description": { "type": "string", "maxLength": 2000 },
+        "category": { "type": "string", "enum": ["JEE Main", "JEE Advanced", "MHT-CET", "Foundation"] },
+        "classLevel": { "type": "string", "enum": ["Class 11th", "Class 12th", "All Classes"] },
+        "price": { "type": "number" },
+        "thumbnailUrl": { "type": "string", "maxLength": 1000 },
+        "status": { "type": "string", "enum": ["PUBLISHED", "DRAFT"] },
+        "enrolledCount": { "type": "number" },
+        "modules": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "category", "price", "status"]
+    },
+    "TestSeries": {
+      "title": "TestSeries",
+      "description": "Mathematics mock test series package",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "maxLength": 200 },
+        "description": { "type": "string", "maxLength": 2000 },
+        "price": { "type": "number" },
+        "mockTestCount": { "type": "number" },
+        "classLevel": { "type": "string", "enum": ["Class 11th", "Class 12th", "All Classes"] },
+        "examCategory": { "type": "string", "enum": ["JEE Main Mathematics", "JEE Advanced Mathematics", "MHT-CET Mathematics"] },
+        "status": { "type": "string", "enum": ["PUBLISHED", "DRAFT"] },
+        "examIds": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "price", "mockTestCount", "examCategory", "status"]
+    },
+    "Payment": {
+      "title": "Payment",
+      "description": "Student UTR payment submission and approval record",
+      "type": "object",
+      "properties": {
+        "studentUid": { "type": "string", "maxLength": 128 },
+        "studentId": { "type": "string", "maxLength": 128 },
+        "studentName": { "type": "string", "maxLength": 120 },
+        "studentEmail": { "type": "string", "maxLength": 254 },
+        "itemType": { "type": "string", "enum": ["COURSE", "TEST_SERIES"] },
+        "itemId": { "type": "string", "maxLength": 128 },
+        "itemTitle": { "type": "string", "maxLength": 200 },
+        "amount": { "type": "number" },
+        "utr": { "type": "string", "minLength": 6, "maxLength": 40, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "status": { "type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"] },
+        "submissionDate": { "type": "string", "format": "date-time" },
+        "verifiedBy": { "type": "string", "maxLength": 254 },
+        "verifiedAt": { "type": "string", "format": "date-time" },
+        "rejectionReason": { "type": "string", "maxLength": 400 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["studentUid", "studentName", "itemType", "itemId", "itemTitle", "amount", "utr", "status", "submissionDate"]
+    },
+    "Enrollment": {
+      "title": "Enrollment",
+      "description": "Verified active enrollment for a course or test series",
+      "type": "object",
+      "properties": {
+        "studentUid": { "type": "string", "maxLength": 128 },
+        "studentId": { "type": "string", "maxLength": 128 },
+        "studentName": { "type": "string", "maxLength": 120 },
+        "itemType": { "type": "string", "enum": ["COURSE", "TEST_SERIES"] },
+        "itemId": { "type": "string", "maxLength": 128 },
+        "itemTitle": { "type": "string", "maxLength": 200 },
+        "paymentId": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "enum": ["ACTIVE", "REVOKED"] },
+        "enrolledAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["studentUid", "itemType", "itemId", "itemTitle", "status", "enrolledAt"]
+    }
+  },
+  "firestore": {
+    "/admins/{uid}": {
+      "schema": { "$ref": "#/entities/AdminUser" },
+      "description": "Super Admin role registry"
+    },
+    "/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/InstituteSettings" },
+      "description": "Institute settings document"
+    },
+    "/students/{studentId}": {
+      "schema": { "$ref": "#/entities/StudentProfile" },
+      "description": "Registered and quick-join student candidates"
+    },
+    "/faculty/{facultyId}": {
+      "schema": { "$ref": "#/entities/FacultyProfile" },
+      "description": "Mathematics faculty directory records"
+    },
+    "/batches/{batchId}": {
+      "schema": { "$ref": "#/entities/Batch" },
+      "description": "Academic batches"
+    },
+    "/batchStudents/{mappingId}": {
+      "schema": { "$ref": "#/entities/BatchStudent" },
+      "description": "Batch-to-student membership records"
+    },
+    "/questionFolders/{folderId}": {
+      "schema": { "$ref": "#/entities/QuestionFolder" },
+      "description": "Question Bank folders"
+    },
+    "/questions/{questionId}": {
+      "schema": { "$ref": "#/entities/Question" },
+      "description": "Master Mathematics Question Bank"
+    },
+    "/exams/{examId}": {
+      "schema": { "$ref": "#/entities/Exam" },
+      "description": "Isolated examinations"
+    },
+    "/exams/{examId}/questions/{questionId}": {
+      "schema": { "$ref": "#/entities/ExamQuestion" },
+      "description": "Exam-specific independent question papers"
+    },
+    "/examAssignments/{assignmentId}": {
+      "schema": { "$ref": "#/entities/ExamAssignment" },
+      "description": "Individual student exam assignments"
+    },
+    "/examAttempts/{attemptId}": {
+      "schema": { "$ref": "#/entities/ExamAttempt" },
+      "description": "Student CBT attempts and evaluation records"
+    },
+    "/evaluationLogs/{logId}": {
+      "schema": { "$ref": "#/entities/EvaluationLog" },
+      "description": "Immutable audit trail of manual score overrides"
+    },
+    "/attendance/{attendanceId}": {
+      "schema": { "$ref": "#/entities/AttendanceRecord" },
+      "description": "Batch student attendance records"
+    },
+    "/studyMaterials/{materialId}": {
+      "schema": { "$ref": "#/entities/StudyMaterial" },
+      "description": "Notes, formula books, DPPs, and PDFs"
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/Notification" },
+      "description": "Portal notifications and announcements"
+    },
+    "/courses/{courseId}": {
+      "schema": { "$ref": "#/entities/Course" },
+      "description": "Mathematics courses with modules"
+    },
+    "/testSeries/{seriesId}": {
+      "schema": { "$ref": "#/entities/TestSeries" },
+      "description": "Mathematics test series packages"
+    },
+    "/payments/{paymentId}": {
+      "schema": { "$ref": "#/entities/Payment" },
+      "description": "UTR payment submissions requiring admin verification"
+    },
+    "/enrollments/{enrollmentId}": {
+      "schema": { "$ref": "#/entities/Enrollment" },
+      "description": "Verified student enrollments"
+    },
+    "/tenants/{tenantId}/students/{studentId}": {
+      "schema": { "$ref": "#/entities/StudentProfile" },
+      "description": "Tenant-isolated student profiles"
+    },
+    "/tenants/{tenantId}/exams/{examId}": {
+      "schema": { "$ref": "#/entities/Exam" },
+      "description": "Tenant-isolated examination headers"
+    },
+    "/tenants/{tenantId}/exams/{examId}/questions/{questionId}": {
+      "schema": { "$ref": "#/entities/ExamQuestion" },
+      "description": "Tenant-isolated exam question sets"
+    }
+  }
+}

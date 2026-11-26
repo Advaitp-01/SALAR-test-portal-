@@ -1,0 +1,6 @@
+{
+  "name": "GYANSAI Maths IIT Center",
+  "description": "Computer-Based Test (CBT), Mathematics Question Bank, Course, Test Series, and Academic Management Portal for GYANSAI Maths IIT Center.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
