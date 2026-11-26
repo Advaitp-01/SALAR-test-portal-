@@ -70,6 +70,19 @@ function getTenantDbPath(tenantId: string): string {
   return resolved;
 }
 
+export function deleteTenantStore(tenantId: string): boolean {
+  try {
+    const filePath = getTenantDbPath(tenantId);
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 function getOrgShortCode(org: Organization): string {
   return (org.shortCode || org.instituteName || 'ORG')
     .toUpperCase()

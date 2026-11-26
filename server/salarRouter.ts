@@ -30,6 +30,7 @@ import {
 import {
   applyTenantPayloadPatch,
   authenticateTenantStudent,
+  deleteTenantStore,
   ensureTenantStore,
   exportTenantRuntimeSnapshot,
   getTenantRuntimeMetrics,
@@ -1725,6 +1726,118 @@ export function createSalarRouter(): express.Router {
     };
     res.setHeader('Content-Disposition', `attachment; filename="${org.id}_export.json"`);
     res.json(exportBundle);
+  });
+
+  router.delete('/owner/organizations/:id', requireOwnerAuth, (req: AuthenticatedOwnerRequest, res: Response) => {
+    const db = readSalarDb();
+    const orgId = String(req.params.id || '').trim();
+    const orgIdx = db.organizations.findIndex((o) => o.id === orgId);
+    if (orgIdx < 0) {
+      res.status(404).json({ error: 'Client organization not found.' });
+      return;
+    }
+
+    const org = db.organizations[orgIdx];
+    if (org.id === 'SALAR-ORG-00001' || org.id === 'SALAR-ORG-TEST') {
+      res.status(400).json({
+        error:
+          'Primary Gurukul portal and SALAR Test Sandbox cannot be deleted. You can suspend or update them instead.',
+      });
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const createBackup = Boolean(req.body?.createBackup) || String(req.query.backup || '') === 'true';
+    let backupArchiveName = '';
+
+    if (createBackup) {
+      const bkp = createBackupArchive(db, {
+        scope: 'TENANT',
+        organizationId: org.id,
+        actor: req.ownerUsername || 'OWNER',
+      });
+      backupArchiveName = bkp.archiveName;
+      const oldTenant = db.tenants.find((t) => t.id === org.tenantId) || null;
+      db.archivedTenants.unshift({
+        archivedAt: now,
+        organizationId: org.id,
+        organizationName: org.instituteName,
+        tenantId: org.tenantId,
+        allocationId: org.portalAllocationId || '',
+        reason: 'Deleted by Platform Owner with pre-delete archive.',
+        exportArchiveName: bkp.archiveName,
+        snapshot: {
+          organization: { ...org },
+          tenant: oldTenant ? { ...oldTenant } : null,
+          domains: db.tenantDomains.filter((d) => d.organizationId === org.id),
+          licenses: db.licenses.filter((l) => l.organizationId === org.id),
+          usage: db.usageRecords.filter((u) => u.organizationId === org.id),
+          runtimeData: exportTenantRuntimeSnapshot(org.tenantId),
+        },
+      });
+    }
+
+    const freedAllocCodes: string[] = [];
+    db.portalAllocations.forEach((alloc) => {
+      if (alloc.currentOrganizationId === org.id || (org.portalAllocationId && alloc.id === org.portalAllocationId)) {
+        alloc.currentOrganizationId = null;
+        alloc.currentTenantId = null;
+        alloc.endpointUrl = '';
+        alloc.status = 'AVAILABLE';
+        alloc.updatedAt = now;
+        freedAllocCodes.push(alloc.code);
+      }
+    });
+
+    db.licenses.forEach((lic) => {
+      if (lic.organizationId === org.id && lic.status !== 'REVOKED') {
+        appendLicenseEvent(db, {
+          licenseId: lic.id,
+          licenseKey: lic.licenseKey,
+          fromStatus: lic.status,
+          toStatus: 'REVOKED',
+          actor: req.ownerUsername || 'OWNER',
+          reason: `Client organization ${org.instituteName} (${org.id}) deleted by Platform Owner.`,
+        });
+      }
+    });
+
+    db.organizations.splice(orgIdx, 1);
+    db.tenants = db.tenants.filter((t) => t.id !== org.tenantId && t.organizationId !== org.id);
+    db.organizationUsers = db.organizationUsers.filter((u) => u.organizationId !== org.id);
+    db.tenantDomains = db.tenantDomains.filter((d) => d.organizationId !== org.id);
+    db.licenseBindings = db.licenseBindings.filter((b) => b.organizationId !== org.id);
+    db.licenses = db.licenses.filter((l) => l.organizationId !== org.id);
+    db.subscriptions = db.subscriptions.filter((s) => s.organizationId !== org.id);
+    db.subscriptionInvoices = db.subscriptionInvoices.filter((i) => i.organizationId !== org.id);
+    db.payments = db.payments.filter((p) => p.organizationId !== org.id);
+    db.usageRecords = db.usageRecords.filter((u) => u.organizationId !== org.id);
+    db.portalDeployments = db.portalDeployments.filter((d) => d.organizationId !== org.id && d.tenantId !== org.tenantId);
+
+    const tenantDbDeleted = deleteTenantStore(org.tenantId);
+
+    appendAuditLog(db, {
+      actor: req.ownerUsername || 'OWNER',
+      actorType: 'OWNER',
+      action: 'ORGANIZATION_DELETED',
+      resourceType: 'Organization',
+      resourceId: org.id,
+      ip: getClientIp(req),
+      details: `Deleted client ${org.instituteName} (${org.id}), database ${org.databaseId || org.tenantId} (storeRemoved=${tenantDbDeleted})${
+        freedAllocCodes.length ? `, freed allocation(s): ${freedAllocCodes.join(', ')}` : ''
+      }${backupArchiveName ? `, backup: ${backupArchiveName}` : ''}.`,
+      status: 'SUCCESS',
+    });
+
+    writeSalarDb(db);
+    res.json({
+      ok: true,
+      deletedOrganizationId: org.id,
+      deletedInstituteName: org.instituteName,
+      freedAllocationId: org.portalAllocationId || null,
+      freedAllocCodes,
+      backupArchiveName: backupArchiveName || undefined,
+    });
   });
 
   // =========================================================================

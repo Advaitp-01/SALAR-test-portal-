@@ -258,6 +258,19 @@ export const salarApi = {
       body: JSON.stringify(payload),
     }),
 
+  deleteOrganization: (id: string, options?: { createBackup?: boolean }) =>
+    apiRequest<{
+      ok: boolean;
+      deletedOrganizationId: string;
+      deletedInstituteName: string;
+      freedAllocationId?: string | null;
+      freedAllocCodes?: string[];
+      backupArchiveName?: string;
+    }>(`/api/owner/organizations/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      body: JSON.stringify({ createBackup: Boolean(options?.createBackup) }),
+    }),
+
   changeClientDomain: (
     id: string,
     payload: {

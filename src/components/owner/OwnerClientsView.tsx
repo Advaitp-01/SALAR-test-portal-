@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import {
+  AlertTriangle,
   ArrowRightLeft,
   Building2,
   CalendarPlus,
@@ -18,6 +19,7 @@ import {
   Search,
   Send,
   Share2,
+  Trash2,
   X,
 } from 'lucide-react';
 import { salarApi } from '../../lib/salarApi';
@@ -48,9 +50,13 @@ export const OwnerClientsView: React.FC<OwnerClientsViewProps> = ({
   const [shareOrg, setShareOrg] = useState<Organization | null>(null);
   const [shareAutoInvite, setShareAutoInvite] = useState(false);
   const [domainOrg, setDomainOrg] = useState<Organization | null>(null);
+  const [deleteOrg, setDeleteOrg] = useState<Organization | null>(null);
+  const [deleteCreateBackup, setDeleteCreateBackup] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+
+  const isProtectedOrg = (org: Organization) => org.id === 'SALAR-ORG-00001' || org.id === 'SALAR-ORG-TEST';
 
   // Create form state
   const [instituteName, setInstituteName] = useState('');
@@ -280,6 +286,41 @@ export const OwnerClientsView: React.FC<OwnerClientsViewProps> = ({
       await onRefresh();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to renew client license.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleOpenDelete = (org: Organization) => {
+    setError('');
+    setDeleteCreateBackup(false);
+    setDeleteOrg(org);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteOrg) return;
+    setError('');
+    setMessage('');
+    setSaving(true);
+    try {
+      const res = await salarApi.deleteOrganization(deleteOrg.id, { createBackup: deleteCreateBackup });
+      if (lastCreatedOrg?.id === deleteOrg.id) {
+        setLastCreatedOrg(null);
+        setLastCreatedPortalPath('');
+      }
+      if (selectedOrg?.id === deleteOrg.id) {
+        setSelectedOrg(null);
+      }
+      const freedText =
+        res.freedAllocCodes && res.freedAllocCodes.length > 0
+          ? ` Released allocation ${res.freedAllocCodes.join(', ')} back to AVAILABLE.`
+          : '';
+      const bkpText = res.backupArchiveName ? ` Backup saved: ${res.backupArchiveName}.` : '';
+      setMessage(`Deleted client ${deleteOrg.instituteName} (${deleteOrg.id}) and its isolated database.${freedText}${bkpText}`);
+      setDeleteOrg(null);
+      await onRefresh();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to delete client organization.');
     } finally {
       setSaving(false);
     }
@@ -533,6 +574,17 @@ export const OwnerClientsView: React.FC<OwnerClientsViewProps> = ({
                     <CalendarPlus className="w-3.5 h-3.5" />
                   </button>
                 )}
+                {!isProtectedOrg(org) && (
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={() => handleOpenDelete(org)}
+                    className="p-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50"
+                    title="Delete Client"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setSelectedOrg(org)}
@@ -774,6 +826,18 @@ export const OwnerClientsView: React.FC<OwnerClientsViewProps> = ({
                             title="Renew License"
                           >
                             <CalendarPlus className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+
+                        {!isProtectedOrg(org) && (
+                          <button
+                            type="button"
+                            disabled={saving}
+                            onClick={() => handleOpenDelete(org)}
+                            className="p-1.5 rounded border border-red-200 text-red-600 hover:bg-red-50"
+                            title="Delete Client"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         )}
 
@@ -1220,13 +1284,29 @@ export const OwnerClientsView: React.FC<OwnerClientsViewProps> = ({
               </form>
             )}
             <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
-              <a
-                href={`/api/owner/organizations/${encodeURIComponent(selectedOrg.id)}/export`}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border border-[#E2E8F0] rounded-lg hover:bg-slate-50 text-slate-700"
-              >
-                <Download className="w-3.5 h-3.5" />
-                Export Tenant JSON
-              </a>
+              <div className="flex flex-wrap items-center gap-2">
+                <a
+                  href={`/api/owner/organizations/${encodeURIComponent(selectedOrg.id)}/export`}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border border-[#E2E8F0] rounded-lg hover:bg-slate-50 text-slate-700"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Export Tenant JSON
+                </a>
+                {!isProtectedOrg(selectedOrg) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const o = selectedOrg;
+                      setSelectedOrg(null);
+                      handleOpenDelete(o);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border border-red-200 text-red-600 rounded-lg hover:bg-red-50"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Delete Client
+                  </button>
+                )}
+              </div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -1258,6 +1338,81 @@ export const OwnerClientsView: React.FC<OwnerClientsViewProps> = ({
                   Close
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Client Organization Confirmation Modal */}
+      {deleteOrg && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4">
+          <div className="bg-white border border-[#E2E8F0] rounded-xl w-full max-w-md p-5 sm:p-6 space-y-4 shadow-xl">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-full bg-red-50 border border-red-200 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-5 h-5 text-red-600" />
+                </div>
+                <div>
+                  <p className="text-xs font-mono font-semibold text-red-600 uppercase">Delete Client Organization</p>
+                  <h3 className="font-display font-bold text-base text-[#0F172A] mt-0.5">
+                    {deleteOrg.instituteName}
+                  </h3>
+                  <p className="text-xs font-mono text-slate-500">
+                    {deleteOrg.id} · DB: {deleteOrg.databaseId || deleteOrg.tenantId}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDeleteOrg(null)}
+                className="text-slate-400 hover:text-slate-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3 rounded-lg bg-red-50/70 border border-red-200 text-xs text-red-800 space-y-1">
+              <p className="font-semibold">This permanently deletes:</p>
+              <ul className="list-disc pl-4 space-y-0.5">
+                <li>Client portal routing ({getPortalPath(deleteOrg)}) and domain bindings</li>
+                <li>Independent tenant database ({deleteOrg.databaseId || deleteOrg.tenantId}) and all tenant records</li>
+                <li>Assigned license, subscriptions, and active client sessions</li>
+              </ul>
+              {deleteOrg.portalAllocationId && (
+                <p className="pt-1 text-emerald-800 font-semibold">
+                  Allocation slot ({deleteOrg.portalAllocationId}) will be released back to AVAILABLE for reuse.
+                </p>
+              )}
+            </div>
+
+            <label className="flex items-start gap-2 text-xs text-slate-700 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={deleteCreateBackup}
+                onChange={(e) => setDeleteCreateBackup(e.target.checked)}
+                className="mt-0.5 rounded border-slate-300"
+              />
+              <span>Create an encrypted AES-256-GCM backup archive before deleting this client.</span>
+            </label>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#E2E8F0]">
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => setDeleteOrg(null)}
+                className="px-4 py-2 text-xs font-semibold border border-[#E2E8F0] rounded-lg hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={handleConfirmDelete}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-red-600 hover:bg-red-700 text-white rounded-lg disabled:opacity-60"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                {saving ? 'Deleting Client...' : 'Delete Client Permanently'}
+              </button>
             </div>
           </div>
         </div>
