@@ -82,6 +82,41 @@ function makeTenantFallbackSettings(ctx: TenantContextResponse | null): Institut
   };
 }
 
+const NEUTRAL_INITIAL_SETTINGS: InstituteSettings = {
+  ...DEFAULT_INSTITUTE_SETTINGS,
+  instituteName: 'Examination Portal',
+  tagline: 'Online Computer-Based Testing & Academic Portal',
+  storageTag: 'tenant-vault',
+  logoUrl: '',
+  heroTitle: 'Online Examination & Learning Portal',
+  heroSubtitle:
+    'Computer-Based Test (CBT) engine, chapterwise question banks, structured courses, and instant rank analytics.',
+  address: '',
+  phone: '',
+  whatsapp: '',
+  email: '',
+  website: '',
+  socialLinks: { youtube: '', instagram: '', telegram: '' },
+  portalConfig: {
+    ...DEFAULT_INSTITUTE_SETTINGS.portalConfig,
+    allowGoogleAuth: false,
+    upiId: '',
+    upiPayeeName: 'Examination Portal',
+    storageProvider: 'SALAR Isolated Vault',
+  },
+};
+
+function isDedicatedPortalOrSystemPath(pathname: string): boolean {
+  const clean = pathname.replace(/\/+$/, '') || '/';
+  return (
+    clean === '/owner' ||
+    clean === '/owner/dashboard' ||
+    clean === '/pay' ||
+    clean === '/test' ||
+    clean.startsWith('/p/')
+  );
+}
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [routeKey, setRouteKey] = useState<string>(
     () => `${window.location.pathname}${window.location.search}`
@@ -94,7 +129,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [role, setRole] = useState<UserRole | null>(null);
   const [adminGateToken, setAdminGateToken] = useState<string | null>(null);
   const [studentProfile, setStudentProfile] = useState<StudentProfile | null>(null);
-  const [settings, setSettings] = useState<InstituteSettings>(DEFAULT_INSTITUTE_SETTINGS);
+  const [settings, setSettings] = useState<InstituteSettings>(() =>
+    isDedicatedPortalOrSystemPath(window.location.pathname)
+      ? NEUTRAL_INITIAL_SETTINGS
+      : DEFAULT_INSTITUTE_SETTINGS
+  );
   const [firebaseAuthChecked, setFirebaseAuthChecked] = useState(false);
   const [adminSessionChecked, setAdminSessionChecked] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'SYNCED' | 'SYNCING' | 'OFFLINE'>('SYNCING');
@@ -167,7 +206,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!active) return;
         setActiveTenantOrgId(DEFAULT_ROOT_ORG_ID);
         setTenantContext(null);
-        setTenantNotFound(false);
+        setTenantNotFound(pathClean.startsWith('/p/') || pathClean === '/test');
+        if (isDedicatedPortalOrSystemPath(pathClean)) {
+          setSettings(NEUTRAL_INITIAL_SETTINGS);
+        }
         setTenantResolved(true);
       });
 

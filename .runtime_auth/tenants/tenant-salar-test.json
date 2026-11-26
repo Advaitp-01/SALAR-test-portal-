@@ -1,0 +1,466 @@
+{
+  "organizationId": "SALAR-ORG-TEST",
+  "tenantId": "tenant-salar-test",
+  "databaseId": "salar_tenant_test",
+  "adminCredential": null,
+  "studentCredentials": [],
+  "collections": {
+    "settings": {
+      "institute": {
+        "instituteName": "SALAR Exam Portal (Test Sandbox)",
+        "tagline": "Online Computer-Based Testing & Academic Portal",
+        "storageTag": "tenant-salar-test",
+        "logoUrl": "",
+        "logoWidth": 40,
+        "logoHeight": 40,
+        "heroImage": "/src/assets/images/hero_clean_math_1795625096103.jpg",
+        "heroTitle": "SALAR Exam Portal (Test Sandbox) — Online Examination & Learning Portal",
+        "heroSubtitle": "Computer-Based Test (CBT) engine, chapterwise question banks, structured courses, and instant rank analytics.",
+        "primaryCta": "Student Portal Login",
+        "secondaryCta": "Quick Join Candidate",
+        "faviconUrl": "",
+        "primaryColor": "#0032A0",
+        "secondaryColor": "#2563EB",
+        "address": "SALAR Cloud Sandbox Campus, Pune, Maharashtra, India",
+        "phone": "+91 98000 00001",
+        "whatsapp": "+91 98000 00001",
+        "email": "testportal@salartech.com",
+        "website": "",
+        "socialLinks": {
+          "youtube": "",
+          "instagram": "",
+          "telegram": ""
+        },
+        "portalConfig": {
+          "allowGoogleAuth": false,
+          "allowEmailPasswordAuth": true,
+          "allowQuickJoin": true,
+          "allowPublicRegistration": true,
+          "autoSubmitOnExpiry": true,
+          "strictNegativeMarking": true,
+          "upiId": "salartest@upi",
+          "upiPayeeName": "SALAR Exam Portal (Test Sandbox)",
+          "bankDetails": "Bank Transfer / UPI verification via 12-digit UTR reference number.",
+          "storageProvider": "SALAR Isolated Vault (tenant-salar-test)",
+          "enableEmailNotifications": true,
+          "enableWhatsAppNotifications": true,
+          "compactTables": false
+        },
+        "updatedAt": "2026-11-26T09:21:48.821Z"
+      }
+    },
+    "batches": {
+      "batch_slr_12": {
+        "name": "SLR Target JEE 2026 (Class 12th)",
+        "classLevel": "Class 12th",
+        "academicYear": "2025-26",
+        "schedule": "Mon–Sat · 07:30 AM – 09:30 AM",
+        "capacity": 150,
+        "facultyName": "SALAR Academic Coordinator",
+        "assignedExamIds": [
+          "ex_slr_mock01"
+        ],
+        "studentCount": 0,
+        "status": "ACTIVE",
+        "createdAt": "2026-11-26T09:21:48.821Z",
+        "updatedAt": "2026-11-26T09:21:48.821Z"
+      },
+      "batch_slr_11": {
+        "name": "SLR Foundation Batch (Class 11th)",
+        "classLevel": "Class 11th",
+        "academicYear": "2025-26",
+        "schedule": "Mon–Sat · 04:00 PM – 06:00 PM",
+        "capacity": 150,
+        "facultyName": "SALAR Academic Coordinator",
+        "assignedExamIds": [],
+        "studentCount": 0,
+        "status": "ACTIVE",
+        "createdAt": "2026-11-26T09:21:48.821Z",
+        "updatedAt": "2026-11-26T09:21:48.821Z"
+      }
+    },
+    "faculty": {
+      "fac_slr_01": {
+        "name": "SALAR Academic Coordinator",
+        "qualification": "Senior Faculty & Academic Lead",
+        "subjectSpecialization": "Mathematics, Calculus & Competitive Exam Prep",
+        "experience": "10+ Years",
+        "email": "testportal@salartech.com",
+        "contactNumber": "+91 98000 00001",
+        "photoUrl": "",
+        "assignedBatches": [
+          "SLR Target JEE 2026 (Class 12th)"
+        ],
+        "status": "ACTIVE",
+        "createdAt": "2026-11-26T09:21:48.821Z",
+        "updatedAt": "2026-11-26T09:21:48.821Z"
+      }
+    },
+    "questionFolders": {
+      "fld_slr_01": {
+        "name": "SLR Starter Question Bank (Calculus & Algebra)",
+        "classLevel": "Class 12th",
+        "chapter": "Differential & Integral Calculus",
+        "examCategory": "JEE Main",
+        "createdAt": "2026-11-26T09:21:48.821Z"
+      }
+    },
+    "questions": {
+      "q_slr_01": {
+        "folderId": "fld_slr_01",
+        "folderName": "SLR Starter Question Bank (Calculus & Algebra)",
+        "title": "Definite Integral Symmetry Property",
+        "questionText": "Evaluate the definite integral: $$\\int_{0}^{\\pi/2} \\frac{\\sin x}{\\sin x + \\cos x}\\,dx$$",
+        "questionImageUrl": "",
+        "questionType": "SINGLE_MCQ",
+        "options": [
+          {
+            "id": "A",
+            "text": "$\\frac{\\pi}{4}$"
+          },
+          {
+            "id": "B",
+            "text": "$\\frac{\\pi}{2}$"
+          },
+          {
+            "id": "C",
+            "text": "$\\pi$"
+          },
+          {
+            "id": "D",
+            "text": "$0$"
+          }
+        ],
+        "correctAnswer": "A",
+        "explanation": "Using King’s property $I = \\int_0^a f(a-x)\\,dx$, adding $I + I = \\int_0^{\\pi/2} 1\\,dx = \\frac{\\pi}{2}$, hence $I = \\frac{\\pi}{4}$.",
+        "positiveMarks": 4,
+        "negativeMarks": 1,
+        "difficulty": "EASY",
+        "classLevel": "Class 12th",
+        "chapter": "Definite Integration",
+        "topic": "Properties of Definite Integrals",
+        "examCategory": "JEE Main",
+        "createdAt": "2026-11-26T09:21:48.821Z",
+        "updatedAt": "2026-11-26T09:21:48.821Z"
+      },
+      "q_slr_02": {
+        "folderId": "fld_slr_01",
+        "folderName": "SLR Starter Question Bank (Calculus & Algebra)",
+        "title": "Matrices & Determinant Invertibility",
+        "questionText": "Let $A$ be a $3 \\times 3$ non-singular square matrix such that $\\det(A) = 5$. Which of the following statements are correct?",
+        "questionImageUrl": "",
+        "questionType": "MULTI_MCQ",
+        "options": [
+          {
+            "id": "A",
+            "text": "$\\det(\\operatorname{adj} A) = 25$"
+          },
+          {
+            "id": "B",
+            "text": "$\\det(2A) = 40$"
+          },
+          {
+            "id": "C",
+            "text": "$\\det(A^{-1}) = 5$"
+          },
+          {
+            "id": "D",
+            "text": "$\\det(A^T) = 5$"
+          }
+        ],
+        "correctAnswer": "A,B,D",
+        "explanation": "$\\det(\\operatorname{adj} A) = |A|^{n-1} = 5^2 = 25$, $\\det(2A) = 2^3 |A| = 40$, and $\\det(A^T) = |A| = 5$.",
+        "positiveMarks": 4,
+        "negativeMarks": 1,
+        "difficulty": "MEDIUM",
+        "classLevel": "Class 12th",
+        "chapter": "Matrices & Determinants",
+        "topic": "Properties of Determinants",
+        "examCategory": "JEE Main",
+        "createdAt": "2026-11-26T09:21:48.821Z",
+        "updatedAt": "2026-11-26T09:21:48.821Z"
+      },
+      "q_slr_03": {
+        "folderId": "fld_slr_01",
+        "folderName": "SLR Starter Question Bank (Calculus & Algebra)",
+        "title": "Standard Trigonometric Limit",
+        "questionText": "Find the numerical value of $\\lim_{x \\to 0} \\frac{1 - \\cos 4x}{x^2}$.",
+        "questionImageUrl": "",
+        "questionType": "NUMERICAL",
+        "options": [],
+        "correctAnswer": "8",
+        "explanation": "$1 - \\cos 4x = 2\\sin^2(2x)$, so $\\lim_{x\\to 0} \\frac{2\\sin^2(2x)}{x^2} = 2 \\cdot 2^2 = 8$.",
+        "positiveMarks": 4,
+        "negativeMarks": 0,
+        "difficulty": "EASY",
+        "classLevel": "Class 11th",
+        "chapter": "Limits & Continuity",
+        "topic": "Trigonometric Limits",
+        "examCategory": "JEE Main",
+        "createdAt": "2026-11-26T09:21:48.821Z",
+        "updatedAt": "2026-11-26T09:21:48.821Z"
+      },
+      "q_slr_04": {
+        "folderId": "fld_slr_01",
+        "folderName": "SLR Starter Question Bank (Calculus & Algebra)",
+        "title": "Quadratic Roots Sum of Squares",
+        "questionText": "If $\\alpha$ and $\\beta$ are roots of $x^2 - 5x + 6 = 0$, find the integer value of $\\alpha^2 + \\beta^2$.",
+        "questionImageUrl": "",
+        "questionType": "INTEGER",
+        "options": [],
+        "correctAnswer": "13",
+        "explanation": "$\\alpha^2 + \\beta^2 = (\\alpha + \\beta)^2 - 2\\alpha\\beta = 25 - 12 = 13$.",
+        "positiveMarks": 4,
+        "negativeMarks": 0,
+        "difficulty": "EASY",
+        "classLevel": "Class 11th",
+        "chapter": "Quadratic Equations",
+        "topic": "Symmetric Functions of Roots",
+        "examCategory": "JEE Main",
+        "createdAt": "2026-11-26T09:21:48.821Z",
+        "updatedAt": "2026-11-26T09:21:48.821Z"
+      }
+    },
+    "exams/ex_slr_mock01/questions": {
+      "eq_1": {
+        "examId": "ex_slr_mock01",
+        "examStatus": "LIVE",
+        "orderIndex": 1,
+        "title": "Definite Integral Symmetry Property",
+        "subject": "Mathematics",
+        "questionText": "Evaluate the definite integral: $$\\int_{0}^{\\pi/2} \\frac{\\sin x}{\\sin x + \\cos x}\\,dx$$",
+        "questionImageUrl": "",
+        "questionType": "SINGLE_MCQ",
+        "options": [
+          {
+            "id": "A",
+            "text": "$\\frac{\\pi}{4}$"
+          },
+          {
+            "id": "B",
+            "text": "$\\frac{\\pi}{2}$"
+          },
+          {
+            "id": "C",
+            "text": "$\\pi$"
+          },
+          {
+            "id": "D",
+            "text": "$0$"
+          }
+        ],
+        "correctAnswer": "A",
+        "explanation": "Using King’s property $I = \\int_0^a f(a-x)\\,dx$, adding $I + I = \\int_0^{\\pi/2} 1\\,dx = \\frac{\\pi}{2}$, hence $I = \\frac{\\pi}{4}$.",
+        "positiveMarks": 4,
+        "negativeMarks": 1,
+        "difficulty": "EASY",
+        "chapter": "Definite Integration",
+        "topic": "Properties of Definite Integrals",
+        "createdAt": "2026-11-26T09:21:48.821Z"
+      },
+      "eq_2": {
+        "examId": "ex_slr_mock01",
+        "examStatus": "LIVE",
+        "orderIndex": 2,
+        "title": "Matrices & Determinant Invertibility",
+        "subject": "Mathematics",
+        "questionText": "Let $A$ be a $3 \\times 3$ non-singular square matrix such that $\\det(A) = 5$. Which of the following statements are correct?",
+        "questionImageUrl": "",
+        "questionType": "MULTI_MCQ",
+        "options": [
+          {
+            "id": "A",
+            "text": "$\\det(\\operatorname{adj} A) = 25$"
+          },
+          {
+            "id": "B",
+            "text": "$\\det(2A) = 40$"
+          },
+          {
+            "id": "C",
+            "text": "$\\det(A^{-1}) = 5$"
+          },
+          {
+            "id": "D",
+            "text": "$\\det(A^T) = 5$"
+          }
+        ],
+        "correctAnswer": "A,B,D",
+        "explanation": "$\\det(\\operatorname{adj} A) = |A|^{n-1} = 5^2 = 25$, $\\det(2A) = 2^3 |A| = 40$, and $\\det(A^T) = |A| = 5$.",
+        "positiveMarks": 4,
+        "negativeMarks": 1,
+        "difficulty": "MEDIUM",
+        "chapter": "Matrices & Determinants",
+        "topic": "Properties of Determinants",
+        "createdAt": "2026-11-26T09:21:48.821Z"
+      },
+      "eq_3": {
+        "examId": "ex_slr_mock01",
+        "examStatus": "LIVE",
+        "orderIndex": 3,
+        "title": "Standard Trigonometric Limit",
+        "subject": "Mathematics",
+        "questionText": "Find the numerical value of $\\lim_{x \\to 0} \\frac{1 - \\cos 4x}{x^2}$.",
+        "questionImageUrl": "",
+        "questionType": "NUMERICAL",
+        "options": [],
+        "correctAnswer": "8",
+        "explanation": "$1 - \\cos 4x = 2\\sin^2(2x)$, so $\\lim_{x\\to 0} \\frac{2\\sin^2(2x)}{x^2} = 2 \\cdot 2^2 = 8$.",
+        "positiveMarks": 4,
+        "negativeMarks": 0,
+        "difficulty": "EASY",
+        "chapter": "Limits & Continuity",
+        "topic": "Trigonometric Limits",
+        "createdAt": "2026-11-26T09:21:48.821Z"
+      },
+      "eq_4": {
+        "examId": "ex_slr_mock01",
+        "examStatus": "LIVE",
+        "orderIndex": 4,
+        "title": "Quadratic Roots Sum of Squares",
+        "subject": "Mathematics",
+        "questionText": "If $\\alpha$ and $\\beta$ are roots of $x^2 - 5x + 6 = 0$, find the integer value of $\\alpha^2 + \\beta^2$.",
+        "questionImageUrl": "",
+        "questionType": "INTEGER",
+        "options": [],
+        "correctAnswer": "13",
+        "explanation": "$\\alpha^2 + \\beta^2 = (\\alpha + \\beta)^2 - 2\\alpha\\beta = 25 - 12 = 13$.",
+        "positiveMarks": 4,
+        "negativeMarks": 0,
+        "difficulty": "EASY",
+        "chapter": "Quadratic Equations",
+        "topic": "Symmetric Functions of Roots",
+        "createdAt": "2026-11-26T09:21:48.821Z"
+      }
+    },
+    "exams": {
+      "ex_slr_mock01": {
+        "title": "SALAR Exam Portal (Test Sandbox) Live CBT Mock Test 01",
+        "code": "SLR-MOCK-01",
+        "classLevel": "All Classes",
+        "target": "JEE Main",
+        "subject": "Mathematics",
+        "examTag": "JEE Main (+4/-1)",
+        "folderName": "SLR Starter Question Bank",
+        "examType": "Full Mock Test",
+        "durationMinutes": 30,
+        "totalMarks": 16,
+        "passingMarks": 6,
+        "questionCount": 4,
+        "openingDate": "2026-11-26",
+        "status": "LIVE",
+        "isPublic": true,
+        "webcamEnabled": false,
+        "randomizeQuestions": false,
+        "assignedCount": 0,
+        "assignedBatchIds": [
+          "batch_slr_12",
+          "batch_slr_11"
+        ],
+        "instructions": "Read each question carefully. Single/Multi MCQ carry +4/-1 marks; Numerical & Integer carry +4/0 marks.",
+        "createdAt": "2026-11-26T09:21:48.821Z",
+        "updatedAt": "2026-11-26T09:21:48.821Z"
+      },
+      "ex_slr_prac02": {
+        "title": "SALAR Exam Portal (Test Sandbox) Practice Assessment 02",
+        "code": "SLR-PRAC-02",
+        "classLevel": "Class 12th",
+        "target": "MHT-CET",
+        "subject": "Mathematics",
+        "examTag": "MHT-CET (+2/0)",
+        "folderName": "SLR Starter Question Bank",
+        "examType": "Chapterwise Test",
+        "durationMinutes": 45,
+        "totalMarks": 0,
+        "passingMarks": 0,
+        "questionCount": 0,
+        "openingDate": "2026-11-26",
+        "status": "DRAFT",
+        "isPublic": false,
+        "webcamEnabled": false,
+        "randomizeQuestions": false,
+        "assignedCount": 0,
+        "assignedBatchIds": [],
+        "instructions": "Draft paper ready for faculty question import or AI OCR upload.",
+        "createdAt": "2026-11-26T09:21:48.821Z",
+        "updatedAt": "2026-11-26T09:21:48.821Z"
+      }
+    },
+    "courses": {
+      "crs_slr_01": {
+        "name": "SALAR Exam Portal (Test Sandbox) JEE Main Complete Foundation",
+        "description": "Structured live & recorded modules, chapterwise DPPs, and full-length CBT test analysis.",
+        "category": "JEE Main",
+        "classLevel": "Class 12th",
+        "price": 2999,
+        "thumbnailUrl": "",
+        "status": "PUBLISHED",
+        "enrolledCount": 0,
+        "modules": [
+          {
+            "id": "mod_slr_1",
+            "title": "Module 1: Differential & Integral Calculus",
+            "chapters": [
+              "Limits & Continuity",
+              "Definite Integration",
+              "Differential Equations"
+            ]
+          },
+          {
+            "id": "mod_slr_2",
+            "title": "Module 2: Algebra, Matrices & Determinants",
+            "chapters": [
+              "Quadratic Equations",
+              "Matrices & Determinants"
+            ]
+          }
+        ],
+        "createdAt": "2026-11-26T09:21:48.821Z",
+        "updatedAt": "2026-11-26T09:21:48.821Z"
+      }
+    },
+    "testSeries": {
+      "ts_slr_01": {
+        "title": "SALAR Exam Portal (Test Sandbox) All-India CBT Mock Series 2026",
+        "description": "NTA-pattern Computer-Based Tests with instant rank card, accuracy metrics, and solutions.",
+        "price": 499,
+        "mockTestCount": 1,
+        "classLevel": "Class 12th",
+        "examCategory": "JEE Main Mathematics",
+        "status": "PUBLISHED",
+        "examIds": [
+          "ex_slr_mock01"
+        ],
+        "createdAt": "2026-11-26T09:21:48.821Z",
+        "updatedAt": "2026-11-26T09:21:48.821Z"
+      }
+    },
+    "studyMaterials": {
+      "mat_slr_01": {
+        "title": "SALAR Exam Portal (Test Sandbox) — Calculus & Algebra Formula Compendium",
+        "description": "Quick-revision formula sheet for JEE Main & MHT-CET candidates.",
+        "classLevel": "Both",
+        "subject": "Mathematics",
+        "chapter": "Formula Revision",
+        "category": "Formula Sheets",
+        "fileUrl": "/api/public/starter-formula-sheet",
+        "fileName": "SLR-Formula-Sheet.txt",
+        "fileSize": "4 KB",
+        "downloadCount": 0,
+        "createdAt": "2026-11-26T09:21:48.821Z",
+        "updatedAt": "2026-11-26T09:21:48.821Z"
+      }
+    },
+    "notifications": {
+      "ntf_slr_01": {
+        "title": "Welcome to SALAR Exam Portal (Test Sandbox) Examination Portal",
+        "message": "SLR-MOCK-01 is LIVE now in My Exams. Attempt the 30-minute CBT mock test and review your instant scorecard.",
+        "type": "EXAM_REMINDER",
+        "targetType": "ALL",
+        "readBy": [],
+        "createdAt": "2026-11-26T09:21:48.821Z"
+      }
+    }
+  },
+  "updatedAt": "2026-11-26T09:21:48.822Z"
+}

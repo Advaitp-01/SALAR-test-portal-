@@ -47,6 +47,42 @@
       "updatedAt": "2026-11-26T06:45:18.502Z",
       "previousPortalSlugs": [],
       "databaseId": "salar_tenant_001"
+    },
+    {
+      "id": "SALAR-ORG-TEST",
+      "instituteName": "SALAR Exam Portal (Test Sandbox)",
+      "shortCode": "SLR",
+      "contactPerson": "SALAR Academic Coordinator",
+      "email": "testportal@salartech.com",
+      "mobile": "+91 98000 00001",
+      "address": "SALAR Cloud Sandbox Campus",
+      "country": "India",
+      "state": "Maharashtra",
+      "city": "Pune",
+      "website": "",
+      "logoUrl": "",
+      "customDomain": "",
+      "subdomain": "salar-test.salartech.com",
+      "portalSlug": "salar-test",
+      "portalPath": "/p/salar-test",
+      "planId": "plan-pro",
+      "planCode": "PRO",
+      "billingCycle": "YEARLY",
+      "customPrice": 0,
+      "studentCapacity": 1000,
+      "examCapacity": 250,
+      "storageLimitMb": 15360,
+      "deploymentType": "SHARED_MULTI_TENANT",
+      "tenantId": "tenant-salar-test",
+      "databaseId": "salar_tenant_test",
+      "portalAllocationId": "alloc-test",
+      "licenseId": "lic-test",
+      "previousPortalSlugs": [
+        "test"
+      ],
+      "status": "ACTIVE",
+      "createdAt": "2026-11-26T09:21:48.820Z",
+      "updatedAt": "2026-11-26T09:21:48.820Z"
     }
   ],
   "organizationUsers": [
@@ -59,6 +95,16 @@
       "role": "CLIENT_SUPER_ADMIN",
       "status": "ACTIVE",
       "createdAt": "2026-11-26T06:45:18.502Z"
+    },
+    {
+      "id": "orguser-test",
+      "organizationId": "SALAR-ORG-TEST",
+      "tenantId": "tenant-salar-test",
+      "email": "testportal@salartech.com",
+      "name": "SALAR Academic Coordinator",
+      "role": "CLIENT_SUPER_ADMIN",
+      "status": "ACTIVE",
+      "createdAt": "2026-11-26T09:21:48.820Z"
     }
   ],
   "tenants": [
@@ -76,6 +122,21 @@
       "createdAt": "2026-11-26T06:45:18.502Z",
       "updatedAt": "2026-11-26T06:45:18.502Z",
       "databaseId": "salar_tenant_001"
+    },
+    {
+      "id": "tenant-salar-test",
+      "organizationId": "SALAR-ORG-TEST",
+      "databaseId": "salar_tenant_test",
+      "namespace": "salar_test_sandbox",
+      "isolationMode": "SHARED_SCHEMA",
+      "storageBucketPrefix": "tenants/salar_test_sandbox",
+      "status": "ACTIVE",
+      "studentCount": 0,
+      "examCount": 2,
+      "questionCount": 4,
+      "storageUsedMb": 2,
+      "createdAt": "2026-11-26T09:21:48.820Z",
+      "updatedAt": "2026-11-26T09:21:48.820Z"
     }
   ],
   "tenantDomains": [
@@ -93,6 +154,21 @@
       "verificationNotes": "Platform wildcard TLS active.",
       "isActive": true,
       "createdAt": "2026-11-26T06:45:18.502Z"
+    },
+    {
+      "id": "dom-test",
+      "organizationId": "SALAR-ORG-TEST",
+      "tenantId": "tenant-salar-test",
+      "domain": "salar-test.salartech.com",
+      "type": "SUBDOMAIN",
+      "dnsTarget": "cname.salartech.com",
+      "dnsVerified": true,
+      "sslStatus": "ACTIVE",
+      "sslExpiresAt": "2027-11-26T09:21:48.820Z",
+      "lastCheckedAt": "2026-11-26T09:21:48.820Z",
+      "verificationNotes": "SALAR Portal Test sandbox route (/test & /p/salar-test) ready.",
+      "isActive": true,
+      "createdAt": "2026-11-26T09:21:48.820Z"
     }
   ],
   "licensePlans": [
@@ -209,6 +285,37 @@
       "notes": "Primary active institute portal allocation",
       "createdAt": "2026-11-26T06:45:18.502Z",
       "updatedAt": "2026-11-26T06:45:18.502Z"
+    },
+    {
+      "id": "lic-test",
+      "licenseKey": "SALAR-SLR-2026-PRO-360DE3CC",
+      "signature": "96e0d1ee1585e14f23407576f46ad823cec0f9c2d15ce362a592cc8f1c743ed9",
+      "organizationId": "SALAR-ORG-TEST",
+      "tenantId": "tenant-salar-test",
+      "planId": "plan-pro",
+      "planCode": "PRO",
+      "portalAllocationId": "alloc-test",
+      "issueDate": "2026-11-26T09:21:48.820Z",
+      "activationDate": "2026-11-26T09:21:48.820Z",
+      "expirationDate": "2027-11-26T09:21:48.820Z",
+      "renewalDate": "2027-11-26T09:21:48.820Z",
+      "billingCycle": "YEARLY",
+      "studentLimit": 1000,
+      "examLimit": 250,
+      "storageLimitMb": 15360,
+      "priceAmount": 0,
+      "featurePermissions": [
+        "Advanced Exam Management",
+        "Question Bank & AI OCR",
+        "PDF & Image Uploads",
+        "Advanced Analytics",
+        "Custom Branding",
+        "15 GB Storage"
+      ],
+      "status": "ACTIVE",
+      "notes": "Dedicated SALAR Exam Portal Test Sandbox for live walkthroughs before client assignment.",
+      "createdAt": "2026-11-26T09:21:48.820Z",
+      "updatedAt": "2026-11-26T09:21:48.820Z"
     }
   ],
   "licenseBindings": [
@@ -220,6 +327,15 @@
       "portalAllocationId": "alloc-001",
       "active": true,
       "boundAt": "2026-11-26T06:45:18.502Z"
+    },
+    {
+      "id": "bind-test",
+      "licenseId": "lic-test",
+      "organizationId": "SALAR-ORG-TEST",
+      "tenantId": "tenant-salar-test",
+      "portalAllocationId": "alloc-test",
+      "active": true,
+      "boundAt": "2026-11-26T09:21:48.820Z"
     }
   ],
   "licenseEvents": [
@@ -294,6 +410,26 @@
       "lastHealthCheckAt": "2026-11-26T06:45:18.502Z",
       "createdAt": "2026-11-26T06:45:18.502Z",
       "updatedAt": "2026-11-26T06:45:18.502Z"
+    },
+    {
+      "id": "alloc-test",
+      "code": "ALLOC-TEST",
+      "name": "SALAR Portal Test Sandbox",
+      "deploymentType": "SHARED_MULTI_TENANT",
+      "region": "asia-east1",
+      "environment": "staging",
+      "capacityStudents": 1000,
+      "capacityExams": 250,
+      "capacityStorageMb": 15360,
+      "currentOrganizationId": "SALAR-ORG-TEST",
+      "currentTenantId": "tenant-salar-test",
+      "status": "ASSIGNED",
+      "healthStatus": "HEALTHY",
+      "endpointUrl": "/p/salar-test",
+      "reassignmentCount": 0,
+      "lastHealthCheckAt": "2026-11-26T09:21:48.820Z",
+      "createdAt": "2026-11-26T09:21:48.820Z",
+      "updatedAt": "2026-11-26T09:21:48.820Z"
     }
   ],
   "portalDeployments": [
@@ -361,6 +497,25 @@
       "autoRenew": true,
       "createdAt": "2026-11-26T06:45:18.502Z",
       "updatedAt": "2026-11-26T06:45:18.502Z"
+    },
+    {
+      "id": "sub-test",
+      "organizationId": "SALAR-ORG-TEST",
+      "organizationName": "SALAR Exam Portal (Test Sandbox)",
+      "planId": "plan-pro",
+      "planCode": "PRO",
+      "billingCycle": "YEARLY",
+      "baseAmount": 0,
+      "gstPercent": 18,
+      "gstAmount": 0,
+      "totalAmount": 0,
+      "currency": "INR",
+      "status": "ACTIVE",
+      "currentPeriodStart": "2026-11-26T09:21:48.820Z",
+      "currentPeriodEnd": "2027-11-26T09:21:48.820Z",
+      "autoRenew": true,
+      "createdAt": "2026-11-26T09:21:48.820Z",
+      "updatedAt": "2026-11-26T09:21:48.820Z"
     }
   ],
   "subscriptionInvoices": [

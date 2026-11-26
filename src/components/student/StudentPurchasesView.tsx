@@ -7,7 +7,7 @@ import { useAuth } from '../../context/AuthContext';
 import type { Enrollment, PaymentRecord } from '../../types/portal';
 
 export const StudentPurchasesView: React.FC = () => {
-  const { firebaseUser } = useAuth();
+  const { firebaseUser, isIsolatedTenant } = useAuth();
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -72,7 +72,9 @@ export const StudentPurchasesView: React.FC = () => {
                     <ShoppingBag className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                     <p className="font-medium text-slate-700">No purchases or UTR submissions yet.</p>
                     <p className="text-xs text-slate-500 mt-1">
-                      Explore Mathematics Courses or Test Series to submit an enrollment request.
+                      {isIsolatedTenant
+                        ? 'Explore Courses or Test Series to submit an enrollment request.'
+                        : 'Explore Mathematics Courses or Test Series to submit an enrollment request.'}
                     </p>
                   </td>
                 </tr>

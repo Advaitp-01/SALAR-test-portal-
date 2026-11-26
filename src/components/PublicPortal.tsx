@@ -350,11 +350,11 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                           onChange={(e) => setTargetExam(e.target.value as typeof targetExam)}
                           className="w-full px-3 py-2 text-sm border border-[#E2E8F0] rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
                         >
-                          <option value="JEE Main">JEE Main Mathematics</option>
-                          <option value="JEE Advanced">JEE Advanced Mathematics</option>
-                          <option value="MHT-CET">MHT-CET Mathematics</option>
+                          <option value="JEE Main">{isIsolatedTenant ? 'JEE Main' : 'JEE Main Mathematics'}</option>
+                          <option value="JEE Advanced">{isIsolatedTenant ? 'JEE Advanced' : 'JEE Advanced Mathematics'}</option>
+                          <option value="MHT-CET">{isIsolatedTenant ? 'MHT-CET' : 'MHT-CET Mathematics'}</option>
                           <option value="JEE Main + Advanced">JEE Main + Advanced</option>
-                          <option value="Boards + CET">Boards + MHT-CET</option>
+                          <option value="Boards + CET">{isIsolatedTenant ? 'Boards + Entrance' : 'Boards + MHT-CET'}</option>
                         </select>
                       </div>
                     </>
@@ -489,7 +489,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
             <div>
               <p className="text-xs font-mono text-[#0032A0] font-semibold uppercase tracking-wider mb-1">
-                Mathematics Curriculum
+                {isIsolatedTenant ? `${displayInstituteName} Curriculum` : 'Mathematics Curriculum'}
               </p>
               <h2 className="font-display text-2xl font-bold text-[#0F172A]">Published Courses</h2>
             </div>
@@ -501,7 +501,9 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
               <BookOpen className="w-8 h-8 text-slate-400 mx-auto mb-2" />
               <p className="text-sm font-medium text-slate-700">No published courses yet.</p>
               <p className="text-xs text-slate-500 mt-1">
-                Administrators can publish Class 11th &amp; 12th Mathematics courses from the Admin Console.
+                {isIsolatedTenant
+                  ? 'Administrators can publish structured courses from the Admin Console.'
+                  : 'Administrators can publish Class 11th & 12th Mathematics courses from the Admin Console.'}
               </p>
             </div>
           ) : (
@@ -554,7 +556,9 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
               <p className="text-xs font-mono text-[#0032A0] font-semibold uppercase tracking-wider mb-1">
                 CBT Assessment Packages
               </p>
-              <h2 className="font-display text-2xl font-bold text-[#0F172A]">Mathematics Test Series</h2>
+              <h2 className="font-display text-2xl font-bold text-[#0F172A]">
+                {isIsolatedTenant ? 'Online Test Series' : 'Mathematics Test Series'}
+              </h2>
             </div>
             <span className="text-xs font-mono text-slate-500 tabular-nums">
               {testSeries.length} Series Published
@@ -566,7 +570,9 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
               <ClipboardList className="w-8 h-8 text-slate-400 mx-auto mb-2" />
               <p className="text-sm font-medium text-slate-700">No published test series packages yet.</p>
               <p className="text-xs text-slate-500 mt-1">
-                JEE Main, JEE Advanced, and MHT-CET Mathematics test series appear here once published.
+                {isIsolatedTenant
+                  ? 'Published Computer-Based Test series packages appear here once activated by your institute.'
+                  : 'JEE Main, JEE Advanced, and MHT-CET Mathematics test series appear here once published.'}
               </p>
             </div>
           ) : (

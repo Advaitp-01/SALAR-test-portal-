@@ -12,7 +12,7 @@ interface StudentTestSeriesViewProps {
 }
 
 export const StudentTestSeriesView: React.FC<StudentTestSeriesViewProps> = ({ onLaunchExam }) => {
-  const { firebaseUser, studentProfile, settings } = useAuth();
+  const { firebaseUser, studentProfile, settings, isIsolatedTenant } = useAuth();
   const [series, setSeries] = useState<TestSeries[]>([]);
   const [exams, setExams] = useState<Exam[]>([]);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
@@ -110,9 +110,13 @@ export const StudentTestSeriesView: React.FC<StudentTestSeriesViewProps> = ({ on
   return (
     <div className="space-y-6">
       <div className="bg-white border border-[#E2E8F0] rounded-xl p-5">
-        <h1 className="font-display text-2xl font-bold text-[#0F172A]">Mathematics Test Series</h1>
+        <h1 className="font-display text-2xl font-bold text-[#0F172A]">
+          {isIsolatedTenant ? 'Online Test Series' : 'Mathematics Test Series'}
+        </h1>
         <p className="text-xs text-slate-500 mt-0.5">
-          Full-length JEE Main, JEE Advanced &amp; MHT-CET Computer-Based Test packages
+          {isIsolatedTenant
+            ? `Full-length Computer-Based Test packages published by ${settings.instituteName}`
+            : 'Full-length JEE Main, JEE Advanced & MHT-CET Computer-Based Test packages'}
         </p>
       </div>
 

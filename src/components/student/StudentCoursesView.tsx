@@ -8,7 +8,7 @@ import { useAuth } from '../../context/AuthContext';
 import type { Course, Enrollment, PaymentRecord } from '../../types/portal';
 
 export const StudentCoursesView: React.FC = () => {
-  const { firebaseUser, studentProfile, settings } = useAuth();
+  const { firebaseUser, studentProfile, settings, isIsolatedTenant } = useAuth();
   const [courses, setCourses] = useState<Course[]>([]);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
@@ -93,9 +93,13 @@ export const StudentCoursesView: React.FC = () => {
   return (
     <div className="space-y-6">
       <div className="bg-white border border-[#E2E8F0] rounded-xl p-5">
-        <h1 className="font-display text-2xl font-bold text-[#0F172A]">Mathematics Courses</h1>
+        <h1 className="font-display text-2xl font-bold text-[#0F172A]">
+          {isIsolatedTenant ? 'Courses & Study Modules' : 'Mathematics Courses'}
+        </h1>
         <p className="text-xs text-slate-500 mt-0.5">
-          Structured JEE Main, JEE Advanced &amp; MHT-CET Mathematics modules with chapter PDFs
+          {isIsolatedTenant
+            ? `Structured learning modules and chapter PDFs published by ${settings.instituteName}`
+            : 'Structured JEE Main, JEE Advanced & MHT-CET Mathematics modules with chapter PDFs'}
         </p>
       </div>
 

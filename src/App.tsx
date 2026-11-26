@@ -46,7 +46,7 @@ function normalizePath(pathname: string): string {
 }
 
 const PortalShell: React.FC = () => {
-  const { authReady, role, isAdminUnlocked, firebaseUser, tenantContext, tenantNotFound } = useAuth();
+  const { authReady, role, isAdminUnlocked, firebaseUser, settings, tenantContext, isIsolatedTenant, tenantNotFound } = useAuth();
   const [pathname, setPathname] = useState<string>(() => normalizePath(window.location.pathname));
   const [ownerAuthChecked, setOwnerAuthChecked] = useState(false);
   const [ownerAuthenticated, setOwnerAuthenticated] = useState(false);
@@ -142,6 +142,73 @@ const PortalShell: React.FC = () => {
 
   const paySlugMatch = pathname.match(/^\/p\/([^/]+)\/pay$/i);
   const isPayRoute = pathname === '/pay' || Boolean(paySlugMatch);
+
+  // Dynamically reflect active Client Institute or Owner Console in browser tab title, meta tags & favicon
+  useEffect(() => {
+    const activeName =
+      (isIsolatedTenant ? tenantContext?.instituteName || settings.instituteName : settings.instituteName) ||
+      'Examination Portal';
+
+    let nextTitle = `${activeName} | Online Examination & Learning Portal`;
+    let nextDesc = `Computer-Based Test (CBT), Question Bank, Courses, and Academic Management Portal for ${activeName}.`;
+
+    if (isOwnerRoute) {
+      nextTitle = 'SALAR Tech | Platform Owner Governance Console';
+      nextDesc = 'Multi-tenant SaaS client, license, domain, and examination infrastructure console.';
+    } else if (isPayRoute) {
+      nextTitle = isIsolatedTenant ? `${activeName} | Subscription Payment` : 'Subscription Payment | SALAR Tech';
+    } else if (tenantNotFound) {
+      nextTitle = 'Portal Not Found | SALAR Tech';
+    } else if (tenantContext?.found && tenantContext.accessBlocked) {
+      nextTitle = `${activeName} | Portal Suspended`;
+    } else if (!authReady && (pathname.startsWith('/p/') || pathname === '/test')) {
+      nextTitle = tenantContext?.instituteName
+        ? `${tenantContext.instituteName} | Online Examination & Learning Portal`
+        : 'Loading Client Portal | SALAR Tech';
+    } else if (role === 'SUPER_ADMIN' || isAdminUnlocked) {
+      nextTitle = `Admin Console | ${activeName}`;
+    } else if (role === 'STUDENT' && firebaseUser) {
+      nextTitle = activeCbtExam ? `${activeCbtExam.title} | ${activeName}` : `Student Portal | ${activeName}`;
+    } else if (!isIsolatedTenant && tenantContext?.organizationId === 'SALAR-ORG-00001') {
+      nextTitle = `${activeName} | Online Test & Academic Portal`;
+    }
+
+    document.title = nextTitle;
+
+    const updateMeta = (selector: string, content: string) => {
+      const el = document.querySelector(selector);
+      if (el) el.setAttribute('content', content);
+    };
+    updateMeta('meta[name="description"]', nextDesc);
+    updateMeta('meta[property="og:title"]', nextTitle);
+    updateMeta('meta[property="og:description"]', nextDesc);
+
+    const iconHref = settings.faviconUrl || (!isOwnerRoute ? settings.logoUrl : '');
+    if (iconHref) {
+      let iconEl = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+      if (!iconEl) {
+        iconEl = document.createElement('link');
+        iconEl.rel = 'icon';
+        document.head.appendChild(iconEl);
+      }
+      iconEl.href = iconHref;
+    }
+  }, [
+    isOwnerRoute,
+    isPayRoute,
+    tenantNotFound,
+    tenantContext,
+    isIsolatedTenant,
+    settings.instituteName,
+    settings.faviconUrl,
+    settings.logoUrl,
+    authReady,
+    pathname,
+    role,
+    isAdminUnlocked,
+    firebaseUser,
+    activeCbtExam,
+  ]);
 
   // Client Manual Payment Submission Route (/pay?org=... or /p/:slug/pay)
   if (isPayRoute) {
