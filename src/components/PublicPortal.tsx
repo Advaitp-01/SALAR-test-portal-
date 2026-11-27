@@ -21,12 +21,14 @@ interface PublicPortalProps {
   onOpenAdminGate: () => void;
   tenantInstituteName?: string;
   tenantOrgId?: string;
+  pendingExamCode?: string;
 }
 
 export const PublicPortal: React.FC<PublicPortalProps> = ({
   onOpenAdminGate,
   tenantInstituteName,
   tenantOrgId,
+  pendingExamCode,
 }) => {
   const { settings, isIsolatedTenant, signInWithGoogle, signInStudentEmail, registerStudentEmail, resetPassword } =
     useAuth();
@@ -246,6 +248,13 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                   </h2>
                   <span className="text-[11px] sm:text-xs font-mono text-slate-500">CBT ACCESS</span>
                 </div>
+
+                {pendingExamCode && (
+                  <div className="mb-4 p-3 rounded-lg bg-blue-50 border border-blue-200 text-xs text-[#0032A0] leading-relaxed">
+                    Direct Examination Link Active (<span className="font-mono font-bold">{pendingExamCode}</span>). Sign
+                    in, register, or quick-join below to enter the CBT exam immediately.
+                  </div>
+                )}
 
                 {/* Segmented Tabs */}
                 <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100 rounded-lg mb-5">

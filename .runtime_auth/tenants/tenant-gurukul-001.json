@@ -1,0 +1,54 @@
+{
+  "organizationId": "SALAR-ORG-00001",
+  "tenantId": "tenant-gurukul-001",
+  "databaseId": "salar_tenant_001",
+  "adminCredential": null,
+  "studentCredentials": [],
+  "collections": {
+    "settings": {
+      "institute": {
+        "instituteName": "Giri Sir's Gurukul Classes",
+        "tagline": "Online Computer-Based Testing & Academic Portal",
+        "storageTag": "tenant-gurukul-001",
+        "logoUrl": "",
+        "logoWidth": 40,
+        "logoHeight": 40,
+        "heroImage": "/src/assets/images/hero_clean_math_1795625096103.jpg",
+        "heroTitle": "Giri Sir's Gurukul Classes — Online Examination & Learning Portal",
+        "heroSubtitle": "Computer-Based Test (CBT) engine, chapterwise question banks, structured courses, and instant rank analytics.",
+        "primaryCta": "Student Portal Login",
+        "secondaryCta": "Quick Join Candidate",
+        "faviconUrl": "",
+        "primaryColor": "#0032A0",
+        "secondaryColor": "#2563EB",
+        "address": "New Usmanpura, Chhatrapati Sambhajinagar, Maharashtra, India",
+        "phone": "+91 98230 00000",
+        "whatsapp": "+91 98230 00000",
+        "email": "gurukulclassestech@gmail.com",
+        "website": "https://girisirgurukul.in",
+        "socialLinks": {
+          "youtube": "",
+          "instagram": "",
+          "telegram": ""
+        },
+        "portalConfig": {
+          "allowGoogleAuth": false,
+          "allowEmailPasswordAuth": true,
+          "allowQuickJoin": true,
+          "allowPublicRegistration": true,
+          "autoSubmitOnExpiry": true,
+          "strictNegativeMarking": true,
+          "upiId": "gurukul@upi",
+          "upiPayeeName": "Giri Sir's Gurukul Classes",
+          "bankDetails": "Bank Transfer / UPI verification via 12-digit UTR reference number.",
+          "storageProvider": "SALAR Isolated Vault (tenant-gurukul-001)",
+          "enableEmailNotifications": true,
+          "enableWhatsAppNotifications": true,
+          "compactTables": false
+        },
+        "updatedAt": "2026-11-27T10:51:29.493Z"
+      }
+    }
+  },
+  "updatedAt": "2026-11-27T10:51:29.494Z"
+}

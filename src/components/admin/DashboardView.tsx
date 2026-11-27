@@ -23,6 +23,7 @@ import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YA
 import { db } from '../../lib/firebase';
 import { useAuth } from '../../context/AuthContext';
 import { formatCurrencyINR, seedMathematicsDemoData } from '../../lib/portalService';
+import { ShareExamModal } from './ShareExamModal';
 import type { AdminModule, Course, Exam, ExamAttempt, PaymentRecord, StudentProfile } from '../../types/portal';
 
 interface DashboardViewProps {
@@ -42,6 +43,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
   const [lastSync, setLastSync] = useState<Date>(new Date());
   const [revRange, setRevRange] = useState<'7D' | '14D' | '30D'>('14D');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [shareModalExam, setShareModalExam] = useState<Exam | null>(null);
   const [seeding, setSeeding] = useState(false);
   const [seedMessage, setSeedMessage] = useState('');
 
@@ -145,27 +147,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
     tenantContext?.portalPath && tenantContext.portalPath !== '/' ? tenantContext.portalPath : '';
 
   const handleCopyExamLink = (exam: Exam) => {
-    const url = `${window.location.origin}${portalBase}/?exam=${exam.id}`;
+    const url = `${window.location.origin}${portalBase}/?cbt=${encodeURIComponent(exam.code)}`;
     navigator.clipboard.writeText(url).catch(() => {});
     setCopiedId(exam.id);
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const handleShareExam = async (exam: Exam) => {
-    const url = `${window.location.origin}${portalBase}/?exam=${exam.id}`;
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: exam.title,
-          text: `Attempt ${exam.title} (${exam.code}) on ${settings.instituteName}`,
-          url,
-        });
-        return;
-      } catch {
-        // Fallback to copy
-      }
-    }
-    handleCopyExamLink(exam);
+  const handleShareExam = (exam: Exam) => {
+    setShareModalExam(exam);
   };
 
   const handleSeedDemo = async () => {
@@ -439,6 +428,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
           )}
         </section>
       </div>
+      {shareModalExam && (
+        <ShareExamModal
+          exam={shareModalExam}
+          instituteName={tenantContext?.instituteName || settings.instituteName}
+          tenantContext={tenantContext}
+          onClose={() => setShareModalExam(null)}
+        />
+      )}
     </div>
   );
 };

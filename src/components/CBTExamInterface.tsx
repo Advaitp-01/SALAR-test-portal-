@@ -19,18 +19,41 @@ import { useAuth } from '../context/AuthContext';
 import { MathText } from './MathText';
 import type { Exam, ExamAttempt, ExamQuestion, StudentAnswerEntry } from '../types/portal';
 
+export interface DirectCandidateInfo {
+  uid: string;
+  name: string;
+  mobile: string;
+  classLevel: string;
+  collegeName?: string;
+  rollNumber: string;
+}
+
 interface CBTExamInterfaceProps {
   exam: Exam;
   isPreviewMode?: boolean;
+  initialQuestions?: ExamQuestion[];
+  directCandidate?: DirectCandidateInfo | null;
+  orgId?: string;
+  skipInstructions?: boolean;
   onExit: () => void;
 }
 
-export const CBTExamInterface: React.FC<CBTExamInterfaceProps> = ({ exam, isPreviewMode = false, onExit }) => {
-  const { firebaseUser, studentProfile } = useAuth();
-  const [questions, setQuestions] = useState<ExamQuestion[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [phase, setPhase] = useState<'instructions' | 'active' | 'submitted'>('instructions');
-  const [agreed, setAgreed] = useState(false);
+export const CBTExamInterface: React.FC<CBTExamInterfaceProps> = ({
+  exam,
+  isPreviewMode = false,
+  initialQuestions,
+  directCandidate,
+  orgId,
+  skipInstructions = false,
+  onExit,
+}) => {
+  const { firebaseUser, studentProfile, tenantContext } = useAuth();
+  const [questions, setQuestions] = useState<ExamQuestion[]>(initialQuestions || []);
+  const [loading, setLoading] = useState(!(initialQuestions && initialQuestions.length > 0));
+  const [phase, setPhase] = useState<'instructions' | 'active' | 'submitted'>(
+    skipInstructions ? 'active' : 'instructions'
+  );
+  const [agreed, setAgreed] = useState(skipInstructions);
 
   const [attemptId, setAttemptId] = useState<string | null>(null);
   const [attemptRecord, setAttemptRecord] = useState<ExamAttempt | null>(null);
@@ -45,23 +68,67 @@ export const CBTExamInterface: React.FC<CBTExamInterfaceProps> = ({ exam, isPrev
   const expiresAtRef = useRef<number>(Date.now() + exam.durationMinutes * 60 * 1000);
   const autoSubmittedRef = useRef(false);
 
+  const activeCandidateUid = directCandidate?.uid || firebaseUser?.uid || '';
+  const localProgressKey = activeCandidateUid ? `salar_cbt_local_${exam.id}_${activeCandidateUid}` : '';
+
   // Load isolated questions for THIS exam only
   useEffect(() => {
     let active = true;
     const load = async () => {
-      setLoading(true);
-      try {
-        const qSnap = await getDocs(
-          query(collection(db, 'exams', exam.id, 'questions'), orderBy('orderIndex', 'asc'))
-        );
-        if (!active) return;
-        let list = qSnap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<ExamQuestion, 'id'>) }));
-        if (exam.randomizeQuestions && !isPreviewMode) {
-          list = [...list].sort(() => Math.random() - 0.5);
+      let list: ExamQuestion[] = initialQuestions && initialQuestions.length > 0 ? [...initialQuestions] : [];
+      if (list.length === 0) {
+        setLoading(true);
+        try {
+          const qSnap = await getDocs(
+            query(collection(db, 'exams', exam.id, 'questions'), orderBy('orderIndex', 'asc'))
+          );
+          if (!active) return;
+          list = qSnap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<ExamQuestion, 'id'>) }));
+        } catch (err) {
+          if (!isPreviewMode && !directCandidate) {
+            handleFirestoreError(err, OperationType.GET, `exams/${exam.id}/questions`);
+          }
         }
-        setQuestions(list);
+      }
 
-        if (!isPreviewMode && firebaseUser) {
+      if (!active) return;
+      if (exam.randomizeQuestions && !isPreviewMode) {
+        list = [...list].sort(() => Math.random() - 0.5);
+      }
+      setQuestions(list);
+
+      // Restore local progress if resuming
+      if (localProgressKey) {
+        try {
+          const raw = window.localStorage.getItem(localProgressKey);
+          if (raw) {
+            const saved = JSON.parse(raw) as {
+              attemptId?: string;
+              answers?: Record<string, StudentAnswerEntry>;
+              expiresAt?: number;
+              submittedRecord?: ExamAttempt;
+            };
+            if (saved.submittedRecord) {
+              setAttemptRecord(saved.submittedRecord);
+              setAnswers(saved.answers || {});
+              setPhase('submitted');
+              setLoading(false);
+              return;
+            }
+            if (saved.attemptId) setAttemptId(saved.attemptId);
+            if (saved.answers) setAnswers(saved.answers);
+            if (typeof saved.expiresAt === 'number' && saved.expiresAt > Date.now()) {
+              expiresAtRef.current = saved.expiresAt;
+              setSecondsLeft(Math.max(0, Math.floor((saved.expiresAt - Date.now()) / 1000)));
+            }
+          }
+        } catch {
+          // ignore local storage errors
+        }
+      }
+
+      if (!isPreviewMode && firebaseUser) {
+        try {
           const attSnap = await getDocs(
             query(
               collection(db, 'examAttempts'),
@@ -84,24 +151,35 @@ export const CBTExamInterface: React.FC<CBTExamInterfaceProps> = ({ exam, isPrev
               setSecondsLeft(rem);
             }
           }
+        } catch {
+          // ignore if direct candidate mode without Firestore student session
         }
-      } catch (err) {
-        if (!isPreviewMode) {
-          handleFirestoreError(err, OperationType.GET, `exams/${exam.id}/questions`);
-        }
-      } finally {
-        if (active) setLoading(false);
       }
+      if (active) setLoading(false);
     };
     load();
     return () => {
       active = false;
     };
-  }, [exam.id, firebaseUser, isPreviewMode]);
+  }, [exam.id, exam.randomizeQuestions, firebaseUser, isPreviewMode, initialQuestions, directCandidate, localProgressKey]);
 
   const persistAnswers = useCallback(
     async (nextAnswers: Record<string, StudentAnswerEntry>) => {
-      if (isPreviewMode || !attemptId) return;
+      if (localProgressKey) {
+        try {
+          window.localStorage.setItem(
+            localProgressKey,
+            JSON.stringify({
+              attemptId: attemptId || undefined,
+              answers: nextAnswers,
+              expiresAt: expiresAtRef.current,
+            })
+          );
+        } catch {
+          // ignore
+        }
+      }
+      if (isPreviewMode || !attemptId || !firebaseUser) return;
       try {
         await updateDoc(doc(db, 'examAttempts', attemptId), {
           answers: nextAnswers,
@@ -111,7 +189,7 @@ export const CBTExamInterface: React.FC<CBTExamInterfaceProps> = ({ exam, isPrev
         // Silent retry on next answer or submit
       }
     },
-    [attemptId, isPreviewMode]
+    [attemptId, isPreviewMode, firebaseUser, localProgressKey]
   );
 
   const handleSubmitExam = useCallback(
@@ -143,41 +221,76 @@ export const CBTExamInterface: React.FC<CBTExamInterfaceProps> = ({ exam, isPrev
         return;
       }
 
-      if (!attemptId) {
-        setSubmitting(false);
-        return;
-      }
+      const resolvedUid = directCandidate?.uid || firebaseUser?.uid || `cand_${Date.now()}`;
+      const resolvedName = directCandidate?.name || studentProfile?.name || firebaseUser?.displayName || 'Student';
+      const resolvedAttemptId = attemptId || `att_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+
+      const updatePayload = {
+        answers,
+        questionResults: graded.questionResults,
+        autoScore: graded.autoScore,
+        finalScore: graded.autoScore,
+        totalMarks: graded.totalMarks,
+        percentage: graded.percentage,
+        accuracy: graded.accuracy,
+        correctCount: graded.correctCount,
+        incorrectCount: graded.incorrectCount,
+        unattemptedCount: graded.unattemptedCount,
+        submittedAt: now,
+        status: 'SUBMITTED' as const,
+        updatedAt: now,
+      };
+
+      const fullSubmittedRecord: ExamAttempt = {
+        id: resolvedAttemptId,
+        examId: exam.id,
+        examTitle: exam.title,
+        examCode: exam.code,
+        studentUid: resolvedUid,
+        studentId: studentProfile?.id || resolvedUid,
+        studentName: resolvedName,
+        rollNumber: directCandidate?.rollNumber || studentProfile?.rollNumber || '',
+        classLevel: directCandidate?.classLevel || studentProfile?.classLevel || exam.classLevel,
+        startedAt: attemptRecord?.startedAt || now,
+        resultsPublished: true,
+        ...updatePayload,
+      };
 
       try {
-        const updatePayload = {
-          answers,
-          questionResults: graded.questionResults,
-          autoScore: graded.autoScore,
-          finalScore: graded.autoScore,
-          totalMarks: graded.totalMarks,
-          percentage: graded.percentage,
-          accuracy: graded.accuracy,
-          correctCount: graded.correctCount,
-          incorrectCount: graded.incorrectCount,
-          unattemptedCount: graded.unattemptedCount,
-          submittedAt: now,
-          status: 'SUBMITTED' as const,
-          updatedAt: now,
-        };
-        await updateDoc(doc(db, 'examAttempts', attemptId), updatePayload);
-        setAttemptRecord((prev) =>
-          prev
-            ? { ...prev, ...updatePayload }
-            : ({
-                id: attemptId,
-                examId: exam.id,
-                examTitle: exam.title,
-                studentUid: firebaseUser?.uid || '',
-                studentName: studentProfile?.name || firebaseUser?.displayName || 'Student',
-                startedAt: now,
-                ...updatePayload,
-              } as ExamAttempt)
-        );
+        if (attemptId && firebaseUser) {
+          await updateDoc(doc(db, 'examAttempts', attemptId), updatePayload).catch(() => {});
+        }
+        // Always persist direct public attempt on server store as well
+        await fetch('/api/public/cbt/attempt', {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+          body: JSON.stringify({
+            orgId: orgId || tenantContext?.organizationId || 'SALAR-ORG-00001',
+            attemptId: resolvedAttemptId,
+            attempt: fullSubmittedRecord,
+          }),
+        }).catch(() => {});
+
+        if (localProgressKey) {
+          try {
+            window.localStorage.setItem(
+              localProgressKey,
+              JSON.stringify({
+                attemptId: resolvedAttemptId,
+                answers,
+                submittedRecord: fullSubmittedRecord,
+              })
+            );
+          } catch {
+            // ignore
+          }
+        }
+
+        setAttemptRecord(fullSubmittedRecord);
         setConfirmSubmit(false);
         setPhase('submitted');
       } catch (err) {
@@ -188,7 +301,21 @@ export const CBTExamInterface: React.FC<CBTExamInterfaceProps> = ({ exam, isPrev
         setSubmitting(false);
       }
     },
-    [submitting, questions, answers, isPreviewMode, exam, attemptId, firebaseUser, studentProfile]
+    [
+      submitting,
+      questions,
+      answers,
+      isPreviewMode,
+      exam,
+      attemptId,
+      attemptRecord?.startedAt,
+      firebaseUser,
+      studentProfile,
+      directCandidate,
+      orgId,
+      tenantContext?.organizationId,
+      localProgressKey,
+    ]
   );
 
   // Countdown timer when active
@@ -221,7 +348,7 @@ export const CBTExamInterface: React.FC<CBTExamInterfaceProps> = ({ exam, isPrev
       return;
     }
 
-    if (!firebaseUser) return;
+    if (!firebaseUser && !directCandidate) return;
 
     if (attemptId && attemptRecord?.status === 'IN_PROGRESS') {
       if (attemptRecord.expiresAt) {
@@ -231,15 +358,44 @@ export const CBTExamInterface: React.FC<CBTExamInterfaceProps> = ({ exam, isPrev
       return;
     }
 
-    const newAttRef = doc(collection(db, 'examAttempts'));
     const totalMarks = questions.reduce((sum, q) => sum + Number(q.positiveMarks || 4), 0);
+
+    if (!firebaseUser && directCandidate) {
+      const localAttId = `att_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+      setAttemptId(localAttId);
+      setAttemptRecord({
+        id: localAttId,
+        examId: exam.id,
+        examTitle: exam.title,
+        examCode: exam.code,
+        studentUid: directCandidate.uid,
+        studentId: directCandidate.uid,
+        studentName: directCandidate.name,
+        rollNumber: directCandidate.rollNumber,
+        classLevel: directCandidate.classLevel,
+        startedAt: now.toISOString(),
+        expiresAt: expires.toISOString(),
+        status: 'IN_PROGRESS',
+        answers: {},
+        totalMarks,
+        resultsPublished: true,
+        createdAt: now.toISOString(),
+        updatedAt: now.toISOString(),
+      });
+      expiresAtRef.current = expires.getTime();
+      setSecondsLeft(exam.durationMinutes * 60);
+      setPhase('active');
+      return;
+    }
+
+    const newAttRef = doc(collection(db, 'examAttempts'));
     const payload: Omit<ExamAttempt, 'id'> = {
       examId: exam.id,
       examTitle: exam.title,
       examCode: exam.code,
-      studentUid: firebaseUser.uid,
-      studentId: studentProfile?.id || firebaseUser.uid,
-      studentName: studentProfile?.name || firebaseUser.displayName || 'Student',
+      studentUid: firebaseUser!.uid,
+      studentId: studentProfile?.id || firebaseUser!.uid,
+      studentName: studentProfile?.name || firebaseUser!.displayName || 'Student',
       rollNumber: studentProfile?.rollNumber || '',
       classLevel: studentProfile?.classLevel || exam.classLevel,
       startedAt: now.toISOString(),
@@ -420,13 +576,22 @@ export const CBTExamInterface: React.FC<CBTExamInterfaceProps> = ({ exam, isPrev
                 {(attemptRecord.submittedAt || '').slice(0, 19).replace('T', ' ')}
               </p>
             </div>
-            <button
-              type="button"
-              onClick={onExit}
-              className="px-4 py-2 text-xs font-semibold bg-[#0032A0] text-white rounded-lg hover:bg-[#00257a]"
-            >
-              Return to Portal
-            </button>
+            <div className="flex flex-wrap items-center gap-2 print:hidden">
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="px-4 py-2 text-xs font-semibold border border-[#E2E8F0] bg-white text-[#0F172A] rounded-lg hover:bg-slate-50"
+              >
+                Download / Print Scorecard &amp; Solutions
+              </button>
+              <button
+                type="button"
+                onClick={onExit}
+                className="px-4 py-2 text-xs font-semibold bg-[#0032A0] text-white rounded-lg hover:bg-[#00257a]"
+              >
+                Return to Portal
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

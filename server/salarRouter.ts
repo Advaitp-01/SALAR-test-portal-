@@ -4414,5 +4414,345 @@ export function createSalarRouter(): express.Router {
     res.json({ ok: true });
   });
 
+  // -------------------------------------------------------------------------
+  // Public Direct CBT Entry (?cbt=CODE) Resolution, Snapshot Sync & Quick Join
+  // -------------------------------------------------------------------------
+  function resolveOrgForPublicCbt(orgIdParam?: string, slugParam?: string): {
+    org: Organization;
+    blocked: boolean;
+    blockReason?: string;
+  } | null {
+    const db = readSalarDb();
+    let org: Organization | undefined;
+    if (orgIdParam && orgIdParam.trim()) {
+      org = db.organizations.find((o) => o.id === orgIdParam.trim());
+    } else if (slugParam && slugParam.trim()) {
+      const s = slugParam.trim().toLowerCase();
+      org = db.organizations.find((o) => o.portalSlug.toLowerCase() === s);
+    } else {
+      org = db.organizations.find((o) => o.id === 'SALAR-ORG-00001');
+    }
+    if (!org) return null;
+    const license = db.licenses.find((l) => l.id === org!.licenseId);
+    const expiredByDate =
+      license && license.status === 'ACTIVE' && new Date(license.expirationDate).getTime() <= Date.now();
+    const blocked =
+      org.status === 'SUSPENDED' ||
+      org.status === 'ARCHIVED' ||
+      Boolean(expiredByDate) ||
+      Boolean(license && ['SUSPENDED', 'EXPIRED', 'REVOKED', 'RELEASED'].includes(license.status));
+    return {
+      org,
+      blocked,
+      blockReason: blocked ? `Portal access for ${org.instituteName} (${org.id}) is suspended.` : undefined,
+    };
+  }
+
+  function verifyRootAdminBearerOrCookie(req: Request): boolean {
+    const cookies = parseCookies(req.headers.cookie);
+    const auth = req.headers.authorization;
+    const token =
+      auth && auth.startsWith('Bearer ')
+        ? auth.slice(7).trim()
+        : cookies['gurukul_admin_session'] || '';
+    if (!token) return false;
+    const parts = token.split('.');
+    if (parts.length !== 2) return false;
+    const [encoded, sig] = parts;
+    const secret = process.env.SESSION_SECRET?.trim() || SERVER_KEYS.sessionSecret;
+    const expectedSig = crypto.createHmac('sha256', secret).update(encoded).digest('base64url');
+    const a = Buffer.from(sig);
+    const b = Buffer.from(expectedSig);
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return false;
+    try {
+      const parsed = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf-8')) as {
+        role?: string;
+        exp?: number;
+      };
+      return Boolean(parsed && parsed.role === 'SUPER_ADMIN' && typeof parsed.exp === 'number' && Date.now() <= parsed.exp);
+    } catch {
+      return false;
+    }
+  }
+
+  router.post('/public/cbt/publish-snapshot', (req: Request, res: Response) => {
+    if (!verifyCsrfRequest(req)) {
+      res.status(403).json({ error: 'Forbidden.' });
+      return;
+    }
+    const orgId = typeof req.body?.orgId === 'string' ? req.body.orgId.trim() : 'SALAR-ORG-00001';
+    const resolved = resolveOrgForPublicCbt(orgId);
+    if (!resolved || resolved.blocked) {
+      res.status(404).json({ error: 'Organization unavailable.' });
+      return;
+    }
+    const isAdminAuthorized =
+      resolved.org.id === 'SALAR-ORG-00001'
+        ? verifyRootAdminBearerOrCookie(req)
+        : resolveTenantCaller(req, resolved.org).role === 'SUPER_ADMIN';
+    if (!isAdminAuthorized) {
+      res.status(401).json({ error: 'Admin authorization required to sync public CBT snapshot.' });
+      return;
+    }
+    const exam = req.body?.exam && typeof req.body.exam === 'object' ? (req.body.exam as Record<string, unknown>) : null;
+    const questions = Array.isArray(req.body?.questions) ? (req.body.questions as Array<Record<string, unknown>>) : [];
+    const examId = typeof exam?.id === 'string' ? exam.id.trim() : '';
+    if (!exam || !isValidDocId(examId)) {
+      res.status(400).json({ error: 'Invalid exam payload.' });
+      return;
+    }
+    const store = ensureTenantStore(resolved.org);
+    if (!store.collections['exams']) store.collections['exams'] = {};
+    const cleanExam = { ...exam };
+    delete cleanExam.id;
+    store.collections['exams'][examId] = cleanExam;
+
+    const qColPath = `exams/${examId}/questions`;
+    store.collections[qColPath] = {};
+    questions.forEach((q, idx) => {
+      const qId = typeof q.id === 'string' && isValidDocId(q.id) ? q.id : `q_${idx + 1}`;
+      const cleanQ = { ...q };
+      delete cleanQ.id;
+      store.collections[qColPath][qId] = {
+        ...cleanQ,
+        examId,
+        examStatus: exam.status || 'LIVE',
+        orderIndex: typeof cleanQ.orderIndex === 'number' ? cleanQ.orderIndex : idx,
+      };
+    });
+
+    if (typeof req.body?.instituteName === 'string' && req.body.instituteName.trim()) {
+      if (!store.collections['settings']) store.collections['settings'] = {};
+      store.collections['settings']['institute'] = {
+        ...(store.collections['settings']['institute'] || {}),
+        instituteName: req.body.instituteName.trim(),
+      };
+    }
+
+    writeTenantStore(resolved.org.tenantId, store);
+    res.json({ ok: true, examId, questionCount: questions.length });
+  });
+
+  router.get('/public/cbt/resolve', (req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store, max-age=0');
+    const orgIdParam = typeof req.query.orgId === 'string' ? req.query.orgId : undefined;
+    const slugParam = typeof req.query.slug === 'string' ? req.query.slug : undefined;
+    const codeParam = typeof req.query.code === 'string' ? req.query.code.trim() : '';
+    const examIdParam = typeof req.query.examId === 'string' ? req.query.examId.trim() : '';
+
+    if (!codeParam && !examIdParam) {
+      res.status(400).json({ error: 'Exam code or examId is required.' });
+      return;
+    }
+
+    const resolved = resolveOrgForPublicCbt(orgIdParam, slugParam);
+    if (!resolved) {
+      res.status(404).json({ found: false, error: 'Institute portal not found.' });
+      return;
+    }
+    if (resolved.blocked) {
+      res.status(403).json({ found: false, blocked: true, error: resolved.blockReason });
+      return;
+    }
+
+    const store = ensureTenantStore(resolved.org);
+    const examsCol = store.collections['exams'] || {};
+    const normalizedCode = codeParam.toUpperCase();
+
+    let matchedId = '';
+    let matchedExam: Record<string, unknown> | null = null;
+
+    if (examIdParam && examsCol[examIdParam]) {
+      const cand = examsCol[examIdParam];
+      if (cand.status === 'LIVE') {
+        matchedId = examIdParam;
+        matchedExam = cand;
+      }
+    }
+
+    if (!matchedExam && normalizedCode) {
+      for (const [id, data] of Object.entries(examsCol)) {
+        if (data.status !== 'LIVE') continue;
+        const c = String(data.code || '').trim().toUpperCase();
+        if (c === normalizedCode || id.toUpperCase() === normalizedCode) {
+          matchedId = id;
+          matchedExam = data;
+          break;
+        }
+      }
+    }
+
+    if (!matchedExam) {
+      res.status(404).json({ found: false, error: 'Live examination not found for this code.' });
+      return;
+    }
+
+    const qCol = store.collections[`exams/${matchedId}/questions`] || {};
+    const questions = Object.entries(qCol)
+      .map(([id, data]) => ({ id, ...data }))
+      .sort((a, b) => Number((a as { orderIndex?: number }).orderIndex ?? 0) - Number((b as { orderIndex?: number }).orderIndex ?? 0));
+
+    const settingsDoc = store.collections['settings']?.['institute'] as { instituteName?: string } | undefined;
+    res.json({
+      found: true,
+      orgId: resolved.org.id,
+      instituteName: settingsDoc?.instituteName || resolved.org.instituteName,
+      exam: {
+        id: matchedId,
+        ...matchedExam,
+        questionCount: questions.length > 0 ? questions.length : Number(matchedExam.questionCount || 0),
+      },
+      questions,
+    });
+  });
+
+  router.post('/public/cbt/quick-join', (req: Request, res: Response) => {
+    if (!verifyCsrfRequest(req)) {
+      res.status(403).json({ error: 'Forbidden: Invalid request origin.' });
+      return;
+    }
+    const orgIdParam = typeof req.body?.orgId === 'string' ? req.body.orgId : undefined;
+    const slugParam = typeof req.body?.slug === 'string' ? req.body.slug : undefined;
+    const resolved = resolveOrgForPublicCbt(orgIdParam, slugParam);
+    if (!resolved) {
+      res.status(404).json({ error: 'Institute portal not found.' });
+      return;
+    }
+    if (resolved.blocked) {
+      res.status(403).json({ error: resolved.blockReason });
+      return;
+    }
+
+    const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+    const mobileRaw = typeof req.body?.mobile === 'string' ? req.body.mobile.trim() : '';
+    const mobileDigits = mobileRaw.replace(/\D/g, '');
+    const classLevel = typeof req.body?.classLevel === 'string' ? req.body.classLevel.trim() : 'Class 11th';
+    const collegeName = typeof req.body?.collegeName === 'string' ? req.body.collegeName.trim() : '';
+    const rollInput = typeof req.body?.rollNumber === 'string' ? req.body.rollNumber.trim() : '';
+    const targetExam = typeof req.body?.targetExam === 'string' ? req.body.targetExam.trim() : 'JEE Main';
+
+    if (name.length < 2) {
+      res.status(400).json({ error: 'Please enter the candidate full name.' });
+      return;
+    }
+    if (mobileDigits.length < 10) {
+      res.status(400).json({ error: 'Please enter a valid 10-digit mobile number.' });
+      return;
+    }
+    if (collegeName.length < 2) {
+      res.status(400).json({ error: 'Please enter your College / School name.' });
+      return;
+    }
+
+    const store = ensureTenantStore(resolved.org);
+    if (!store.collections['students']) store.collections['students'] = {};
+    const shortPrefix =
+      (resolved.org.shortCode || resolved.org.instituteName || 'ORG')
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, '')
+        .slice(0, 4) || 'ORG';
+    const now = new Date().toISOString();
+    const year = new Date().getFullYear();
+
+    // Reuse existing quick-join profile if same mobile exists in this org
+    let studentUid = '';
+    let existingStudent: Record<string, unknown> | null = null;
+    for (const [sid, sdata] of Object.entries(store.collections['students'])) {
+      const m = String(sdata.mobile || '').replace(/\D/g, '');
+      if (m && m.slice(-10) === mobileDigits.slice(-10)) {
+        studentUid = sid;
+        existingStudent = sdata;
+        break;
+      }
+    }
+
+    if (!studentUid) {
+      studentUid = `qj_${mobileDigits.slice(-10)}_${crypto.randomBytes(3).toString('hex')}`;
+    }
+
+    const assignedRoll =
+      rollInput ||
+      (existingStudent?.rollNumber ? String(existingStudent.rollNumber) : '') ||
+      `${shortPrefix}-${year}-${mobileDigits.slice(-4)}`;
+
+    const studentRecord: Record<string, unknown> = {
+      ...(existingStudent || {}),
+      uid: studentUid,
+      name,
+      email: existingStudent?.email || `candidate.${mobileDigits.slice(-10)}@portal.local`,
+      mobile: mobileDigits.slice(-10),
+      whatsapp: mobileDigits.slice(-10),
+      classLevel: ['Class 11th', 'Class 12th', 'Dropper / Repeater'].includes(classLevel) ? classLevel : 'Class 11th',
+      targetExam,
+      collegeName,
+      rollNumber: assignedRoll,
+      username: name.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 16) || `stu${mobileDigits.slice(-4)}`,
+      enrollmentId: existingStudent?.enrollmentId || `ENR-${year}-${mobileDigits.slice(-4)}`,
+      batchId: existingStudent?.batchId || '',
+      batchName: collegeName || String(existingStudent?.batchName || 'Direct CBT Candidate'),
+      origin: 'QUICK_JOIN',
+      status: 'QUICK_JOIN',
+      photoUrl: existingStudent?.photoUrl || '',
+      attemptsCount: Number(existingStudent?.attemptsCount || 0),
+      avgPercentage: Number(existingStudent?.avgPercentage || 0),
+      createdAt: existingStudent?.createdAt || now,
+      updatedAt: now,
+    };
+
+    store.collections['students'][studentUid] = studentRecord;
+    writeTenantStore(resolved.org.tenantId, store);
+
+    let token = '';
+    if (resolved.org.id !== 'SALAR-ORG-00001') {
+      token = signTenantSessionToken({
+        orgId: resolved.org.id,
+        tenantId: resolved.org.tenantId,
+        role: 'STUDENT',
+        uid: studentUid,
+        email: String(studentRecord.email),
+        exp: Date.now() + 30 * 24 * 60 * 60 * 1000,
+      });
+      setTenantCookie(req, res, resolved.org.id, 'student', token);
+    }
+
+    res.status(201).json({
+      ok: true,
+      token,
+      student: { id: studentUid, ...studentRecord },
+    });
+  });
+
+  router.post('/public/cbt/attempt', (req: Request, res: Response) => {
+    if (!verifyCsrfRequest(req)) {
+      res.status(403).json({ error: 'Forbidden.' });
+      return;
+    }
+    const orgIdParam = typeof req.body?.orgId === 'string' ? req.body.orgId : undefined;
+    const resolved = resolveOrgForPublicCbt(orgIdParam);
+    if (!resolved || resolved.blocked) {
+      res.status(403).json({ error: 'Portal unavailable.' });
+      return;
+    }
+    const attemptId =
+      typeof req.body?.attemptId === 'string' && isValidDocId(req.body.attemptId)
+        ? req.body.attemptId
+        : `att_${Date.now().toString(36)}_${crypto.randomBytes(3).toString('hex')}`;
+    const attempt =
+      req.body?.attempt && typeof req.body.attempt === 'object' ? (req.body.attempt as Record<string, unknown>) : null;
+    if (!attempt || !attempt.examId || !attempt.studentUid) {
+      res.status(400).json({ error: 'Invalid attempt payload.' });
+      return;
+    }
+    const store = ensureTenantStore(resolved.org);
+    if (!store.collections['examAttempts']) store.collections['examAttempts'] = {};
+    store.collections['examAttempts'][attemptId] = {
+      ...(store.collections['examAttempts'][attemptId] || {}),
+      ...attempt,
+      updatedAt: new Date().toISOString(),
+    };
+    writeTenantStore(resolved.org.tenantId, store);
+    res.json({ ok: true, attemptId });
+  });
+
   return router;
 }

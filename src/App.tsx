@@ -3,13 +3,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import React, { useCallback, useEffect, useState } from 'react';
-import { doc, getDoc } from './lib/tenantDb';
-import { ShieldAlert } from 'lucide-react';
+import { collection, doc, getDoc, getDocs, query, where } from './lib/tenantDb';
+import { Clock, FileText, Play, ShieldAlert } from 'lucide-react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { db } from './lib/firebase';
 import { salarApi } from './lib/salarApi';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { PublicPortal } from './components/PublicPortal';
+import { DirectCbtEntry } from './components/DirectCbtEntry';
 import { AdminGateModal } from './components/AdminGateModal';
 import { CBTExamInterface } from './components/CBTExamInterface';
 import { AdminLayout } from './components/admin/AdminLayout';
@@ -55,6 +56,7 @@ const PortalShell: React.FC = () => {
   const [adminModule, setAdminModule] = useState<AdminModule>('dashboard');
   const [studentModule, setStudentModule] = useState<StudentModule>('dashboard');
   const [activeCbtExam, setActiveCbtExam] = useState<Exam | null>(null);
+  const [overviewExam, setOverviewExam] = useState<Exam | null>(null);
 
   const navigateTo = useCallback((targetPath: string, replace = false) => {
     const normalized = normalizePath(targetPath);
@@ -117,23 +119,44 @@ const PortalShell: React.FC = () => {
     };
   }, [isOwnerRoute, pathname, ownerAuthenticated, navigateTo]);
 
-  // Support direct ?exam=<id> link after student login
+  // Support direct ?cbt=<code> or ?exam=<id> (with optional ?view=overview) after student login
   useEffect(() => {
     if (isOwnerRoute || !authReady || !firebaseUser || role !== 'STUDENT') return;
     const params = new URLSearchParams(window.location.search);
     const examId = params.get('exam');
-    if (!examId || !/^[a-zA-Z0-9_-]{1,128}$/.test(examId)) return;
+    const cbtCode = params.get('cbt');
+    const viewMode = params.get('view');
+    if (!examId && !cbtCode) return;
 
     let active = true;
-    getDoc(doc(db, 'exams', examId))
-      .then((snap) => {
-        if (!active || !snap.exists()) return;
-        const data = snap.data() as Omit<Exam, 'id'>;
-        if (data.status === 'LIVE') {
-          setActiveCbtExam({ id: snap.id, ...data });
-        }
-      })
-      .catch(() => {});
+
+    const openResolvedExam = (resolved: Exam | null) => {
+      if (!active || !resolved || resolved.status !== 'LIVE') return;
+      if (viewMode === 'overview') {
+        setOverviewExam(resolved);
+      } else {
+        setActiveCbtExam(resolved);
+      }
+    };
+
+    if (examId && /^[a-zA-Z0-9_-]{1,128}$/.test(examId)) {
+      getDoc(doc(db, 'exams', examId))
+        .then((snap) => {
+          if (!snap.exists()) return;
+          openResolvedExam({ id: snap.id, ...(snap.data() as Omit<Exam, 'id'>) });
+        })
+        .catch(() => {});
+    } else if (cbtCode) {
+      const normalized = cbtCode.trim().toUpperCase();
+      getDocs(query(collection(db, 'exams'), where('status', '==', 'LIVE')))
+        .then((snap) => {
+          const found = snap.docs
+            .map((d) => ({ id: d.id, ...(d.data() as Omit<Exam, 'id'>) }))
+            .find((ex) => ex.code.trim().toUpperCase() === normalized || ex.id === cbtCode.trim());
+          openResolvedExam(found || null);
+        })
+        .catch(() => {});
+    }
 
     return () => {
       active = false;
@@ -357,11 +380,85 @@ const PortalShell: React.FC = () => {
           exam={activeCbtExam}
           onExit={() => {
             setActiveCbtExam(null);
-            if (window.location.search.includes('exam=')) {
+            setOverviewExam(null);
+            if (window.location.search.includes('exam=') || window.location.search.includes('cbt=')) {
               window.history.replaceState({}, '', window.location.pathname);
             }
           }}
         />
+      );
+    }
+
+    if (overviewExam) {
+      return (
+        <StudentLayout activeModule={studentModule} onSelectModule={setStudentModule}>
+          <div className="max-w-2xl mx-auto bg-white border border-[#E2E8F0] rounded-xl p-6 sm:p-8 space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
+              <span className="px-2.5 py-1 bg-blue-50 border border-blue-200 rounded font-bold text-[#0032A0]">
+                {overviewExam.code}
+              </span>
+              <span className="text-slate-500">
+                {overviewExam.classLevel} · {overviewExam.examTag || overviewExam.target}
+              </span>
+            </div>
+            <div>
+              <h1 className="font-display text-2xl font-bold text-[#0F172A]">{overviewExam.title}</h1>
+              <p className="text-sm text-slate-600 mt-1">
+                {overviewExam.subject || 'Examination Paper'} · {settings.instituteName}
+              </p>
+            </div>
+            <div className="grid grid-cols-3 gap-3 text-center">
+              <div className="p-3 bg-slate-50 border border-[#E2E8F0] rounded-lg">
+                <p className="text-[11px] font-mono text-slate-500 uppercase">Duration</p>
+                <p className="font-mono text-base font-bold text-[#0F172A] mt-0.5 tabular-nums">
+                  {overviewExam.durationMinutes} mins
+                </p>
+              </div>
+              <div className="p-3 bg-slate-50 border border-[#E2E8F0] rounded-lg">
+                <p className="text-[11px] font-mono text-slate-500 uppercase">Questions</p>
+                <p className="font-mono text-base font-bold text-[#0032A0] mt-0.5 tabular-nums">
+                  {overviewExam.questionCount || 0}
+                </p>
+              </div>
+              <div className="p-3 bg-slate-50 border border-[#E2E8F0] rounded-lg">
+                <p className="text-[11px] font-mono text-slate-500 uppercase">Total Marks</p>
+                <p className="font-mono text-base font-bold text-emerald-700 mt-0.5 tabular-nums">
+                  {overviewExam.totalMarks}
+                </p>
+              </div>
+            </div>
+            {overviewExam.instructions && (
+              <div className="p-4 bg-slate-50 border border-[#E2E8F0] rounded-lg text-xs text-slate-700 space-y-1.5">
+                <p className="font-semibold text-[#0F172A] flex items-center gap-1.5">
+                  <FileText className="w-3.5 h-3.5 text-[#0032A0]" />
+                  Examination Instructions
+                </p>
+                <p className="leading-relaxed whitespace-pre-line">{overviewExam.instructions}</p>
+              </div>
+            )}
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-[#E2E8F0]">
+              <button
+                type="button"
+                onClick={() => {
+                  setOverviewExam(null);
+                  window.history.replaceState({}, '', window.location.pathname);
+                }}
+                className="inline-flex items-center gap-1.5 px-4 py-2.5 text-xs font-semibold border border-[#E2E8F0] bg-white hover:bg-slate-50 text-slate-700 rounded-lg"
+              >
+                <Clock className="w-3.5 h-3.5" />
+                Back to Student Portal
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveCbtExam(overviewExam)}
+                className="inline-flex items-center gap-2 px-5 py-2.5 text-xs font-semibold bg-[#0032A0] hover:bg-[#00257a] text-white rounded-lg"
+              >
+                <Play className="w-4 h-4" />
+                Start CBT Examination
+              </button>
+            </div>
+          </div>
+        </StudentLayout>
       );
     }
 
@@ -379,6 +476,32 @@ const PortalShell: React.FC = () => {
     );
   }
 
+  const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const directCbtParam = searchParams?.get('cbt') || '';
+  const directExamParam = searchParams?.get('exam') || '';
+  const pendingExamCode = directCbtParam || directExamParam;
+
+  if (directCbtParam && !isOwnerRoute) {
+    return (
+      <DirectCbtEntry
+        codeOrId={directCbtParam}
+        isIdLookup={false}
+        orgId={tenantContext?.organizationId}
+        portalSlug={tenantContext?.portalSlug}
+        fallbackInstituteName={
+          isIsolatedTenant
+            ? tenantContext?.instituteName || settings.instituteName
+            : settings.instituteName
+        }
+        logoUrl={settings.logoUrl}
+        onExitToPortal={() => {
+          window.history.replaceState({}, '', window.location.pathname);
+          window.dispatchEvent(new Event('salar-route-change'));
+        }}
+      />
+    );
+  }
+
   // Public Landing & Authentication Portal
   return (
     <>
@@ -386,6 +509,7 @@ const PortalShell: React.FC = () => {
         onOpenAdminGate={() => setAdminGateOpen(true)}
         tenantInstituteName={tenantContext?.instituteName}
         tenantOrgId={tenantContext?.organizationId}
+        pendingExamCode={pendingExamCode}
       />
       <AdminGateModal
         isOpen={adminGateOpen}

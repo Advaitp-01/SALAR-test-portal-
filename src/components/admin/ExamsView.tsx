@@ -45,6 +45,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { CBTExamInterface } from '../CBTExamInterface';
 import { MathText } from '../MathText';
+import { ShareExamModal } from './ShareExamModal';
 import type {
   Batch,
   Exam,
@@ -129,7 +130,8 @@ function getPresetMarksFromExam(ex?: Exam | null): { pos: number; neg: number } 
 }
 
 export const ExamsView: React.FC = () => {
-  const { tenantContext, settings } = useAuth();
+  const { tenantContext, settings, syncStatus, firebaseUser, isIsolatedTenant, cloudAuthNeeded } = useAuth();
+  const needsCloudAuth = !isIsolatedTenant && (!firebaseUser || cloudAuthNeeded);
   const examCodePrefix =
     tenantContext?.portalPath === '/'
       ? 'GC'
@@ -152,7 +154,6 @@ export const ExamsView: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'LIVE' | 'DRAFT'>('ALL');
   const [subjectFilter, setSubjectFilter] = useState<string>('All Subjects');
   const [folderFilter, setFolderFilter] = useState<string>('ALL');
-  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Toast queue
   const [toasts, setToasts] = useState<ToastItem[]>([]);
@@ -227,8 +228,9 @@ export const ExamsView: React.FC = () => {
   const [qSaving, setQSaving] = useState(false);
   const [qError, setQError] = useState('');
 
-  // Analytics & CBT Preview
+  // Analytics, Share Modal & CBT Preview
   const [analyticsExam, setAnalyticsExam] = useState<Exam | null>(null);
+  const [shareModalExam, setShareModalExam] = useState<Exam | null>(null);
   const [cbtTestExam, setCbtTestExam] = useState<Exam | null>(null);
 
   useEffect(() => {
@@ -866,28 +868,8 @@ export const ExamsView: React.FC = () => {
     pushToast(`Imported ${ocrDrafts.length} OCR questions into "${editingExam.title}".`);
   };
 
-  const copyExamLink = (ex: Exam) => {
-    navigator.clipboard.writeText(`${window.location.origin}${portalBase}/?exam=${ex.id}`).catch(() => {});
-    setCopiedId(ex.id);
-    pushToast(`Exam CBT link copied for "${ex.title}".`);
-    setTimeout(() => setCopiedId(null), 2000);
-  };
-
-  const shareExamLink = async (ex: Exam) => {
-    const url = `${window.location.origin}${portalBase}/?exam=${ex.id}`;
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: ex.title,
-          text: `${settings.instituteName} · CBT Exam ${ex.code}`,
-          url,
-        });
-        return;
-      } catch {
-        // Fallback to clipboard copy
-      }
-    }
-    copyExamLink(ex);
+  const shareExamLink = (ex: Exam) => {
+    setShareModalExam(ex);
   };
 
   const handleClone = async (ex: Exam) => {
@@ -918,6 +900,18 @@ export const ExamsView: React.FC = () => {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
+          <span
+            className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-mono font-semibold rounded-lg border ${
+              needsCloudAuth
+                ? 'bg-amber-50 border-amber-200 text-amber-800'
+                : syncStatus === 'SYNCED'
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                : 'bg-slate-100 border-[#E2E8F0] text-slate-600'
+            }`}
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            {needsCloudAuth ? 'Cloud Auth Required' : syncStatus === 'SYNCED' ? 'Cloud Sync Active' : 'Offline Mode'}
+          </span>
           <button
             type="button"
             onClick={() => openCreateFolderModal(undefined, false)}
@@ -1115,12 +1109,8 @@ export const ExamsView: React.FC = () => {
                           onClick={() => shareExamLink(ex)}
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border border-[#E2E8F0] bg-white hover:bg-slate-50 text-slate-700 rounded-lg"
                         >
-                          {copiedId === ex.id ? (
-                            <Check className="w-3.5 h-3.5 text-emerald-600" />
-                          ) : (
-                            <Share2 className="w-3.5 h-3.5 text-slate-500" />
-                          )}
-                          {copiedId === ex.id ? 'Copied' : 'Share'}
+                          <Share2 className="w-3.5 h-3.5 text-slate-500" />
+                          Share
                         </button>
                         <button
                           type="button"
@@ -2227,6 +2217,18 @@ export const ExamsView: React.FC = () => {
             })()}
           </div>
         </div>
+      )}
+
+      {/* Share Online Examination to Students Modal */}
+      {shareModalExam && (
+        <ShareExamModal
+          exam={shareModalExam}
+          instituteName={tenantContext?.instituteName || settings.instituteName}
+          tenantContext={tenantContext}
+          onClose={() => setShareModalExam(null)}
+          onTestCbt={(targetEx) => setCbtTestExam(targetEx)}
+          onCopied={(msg) => pushToast(msg)}
+        />
       )}
 
       {/* Bottom-Right Stacked Toast Notifications (Matches Screenshot 2) */}
