@@ -12,7 +12,7 @@ export type LicenseStatus =
   | 'REVOKED';
 
 export type PlanCode = 'STARTER' | 'PRO' | 'ENTERPRISE';
-export type BillingCycle = 'MONTHLY' | 'QUARTERLY' | 'YEARLY' | 'CUSTOM';
+export type BillingCycle = 'TRIAL' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY' | 'CUSTOM';
 export type DeploymentType = 'SHARED_MULTI_TENANT' | 'DEDICATED';
 export type HealthState = 'HEALTHY' | 'WARNING' | 'CRITICAL' | 'OFFLINE';
 

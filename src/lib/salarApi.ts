@@ -239,6 +239,10 @@ export const salarApi = {
     examCapacity?: number;
     customPrice?: number | null;
     initialAdminPasscode?: string;
+    startDate?: string;
+    expirationDate?: string;
+    trialDays?: number;
+    customDays?: number;
   }) =>
     apiRequest<{
       organization: Organization;
@@ -246,6 +250,22 @@ export const salarApi = {
       allocation: PortalAllocation;
       portalPath: string;
     }>('/api/owner/organizations', { method: 'POST', body: JSON.stringify(payload) }),
+
+  assignClientValidity: (
+    organizationId: string,
+    payload: {
+      mode?: 'TRIAL' | 'CUSTOM_DATE';
+      billingCycle: BillingCycle;
+      startDate?: string;
+      expirationDate?: string;
+      days?: number;
+      notes?: string;
+    }
+  ) =>
+    apiRequest<{ organization: Organization; license: LicenseRecord }>(
+      `/api/owner/organizations/${encodeURIComponent(organizationId)}/validity`,
+      { method: 'POST', body: JSON.stringify(payload) }
+    ),
 
   setClientAdminPasscode: (organizationId: string, passcode: string) =>
     apiRequest<{ ok: boolean; organizationId: string }>(

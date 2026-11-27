@@ -269,7 +269,8 @@ export function canTransitionLicense(from: LicenseStatus, to: LicenseStatus): bo
 
 export function addPeriodToIso(startIso: string, cycle: BillingCycle, customDays = 30): string {
   const dt = new Date(startIso);
-  if (cycle === 'MONTHLY') dt.setMonth(dt.getMonth() + 1);
+  if (cycle === 'TRIAL') dt.setDate(dt.getDate() + (customDays > 0 ? customDays : 14));
+  else if (cycle === 'MONTHLY') dt.setMonth(dt.getMonth() + 1);
   else if (cycle === 'QUARTERLY') dt.setMonth(dt.getMonth() + 3);
   else if (cycle === 'YEARLY') dt.setFullYear(dt.getFullYear() + 1);
   else dt.setDate(dt.getDate() + customDays);
@@ -278,6 +279,7 @@ export function addPeriodToIso(startIso: string, cycle: BillingCycle, customDays
 
 export function computePlanPrice(plan: LicensePlan, cycle: BillingCycle, customPrice?: number | null): number {
   if (typeof customPrice === 'number' && customPrice >= 0) return customPrice;
+  if (cycle === 'TRIAL') return 0;
   if (cycle === 'QUARTERLY') return plan.quarterlyPrice;
   if (cycle === 'YEARLY') return plan.yearlyPrice;
   return plan.monthlyPrice;

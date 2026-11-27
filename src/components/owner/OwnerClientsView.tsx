@@ -60,6 +60,25 @@ export const OwnerClientsView: React.FC<OwnerClientsViewProps> = ({
 
   const isProtectedOrg = (org: Organization) => org.id === 'SALAR-ORG-00001' || org.id === 'SALAR-ORG-TEST';
 
+  const todayStr = () => new Date().toISOString().slice(0, 10);
+  const addDaysStr = (baseStr: string, days: number) => {
+    const dt = new Date(`${baseStr || todayStr()}T00:00:00Z`);
+    if (Number.isNaN(dt.getTime())) return todayStr();
+    dt.setUTCDate(dt.getUTCDate() + days);
+    return dt.toISOString().slice(0, 10);
+  };
+  const countDaysBetween = (startStr: string, endStr: string) => {
+    const s = new Date(`${startStr}T00:00:00Z`).getTime();
+    const e = new Date(`${endStr}T00:00:00Z`).getTime();
+    if (Number.isNaN(s) || Number.isNaN(e)) return 0;
+    return Math.max(0, Math.round((e - s) / (1000 * 60 * 60 * 24)));
+  };
+  const getDaysRemaining = (expIso?: string) => {
+    if (!expIso) return null;
+    const ms = new Date(expIso).getTime() - Date.now();
+    return Math.ceil(ms / (1000 * 60 * 60 * 24));
+  };
+
   // Create form state
   const [instituteName, setInstituteName] = useState('');
   const [shortCode, setShortCode] = useState('');
@@ -73,10 +92,20 @@ export const OwnerClientsView: React.FC<OwnerClientsViewProps> = ({
   const [customDomain, setCustomDomain] = useState('');
   const [planCode, setPlanCode] = useState<PlanCode>('PRO');
   const [billingCycle, setBillingCycle] = useState<BillingCycle>('MONTHLY');
+  const [startDate, setStartDate] = useState<string>(() => todayStr());
+  const [expirationDate, setExpirationDate] = useState<string>(() => addDaysStr(todayStr(), 30));
   const [deploymentType, setDeploymentType] = useState<DeploymentType>('SHARED_MULTI_TENANT');
   const [portalAllocationId, setPortalAllocationId] = useState('');
   const [customPrice, setCustomPrice] = useState('');
   const [initialAdminPasscode, setInitialAdminPasscode] = useState('');
+
+  // Assign Trial / Validity Dates modal state
+  const [validityOrg, setValidityOrg] = useState<Organization | null>(null);
+  const [validityMode, setValidityMode] = useState<'TRIAL' | 'CUSTOM_DATE' | 'QUICK_RENEW'>('TRIAL');
+  const [validityCycle, setValidityCycle] = useState<BillingCycle>('TRIAL');
+  const [validityStart, setValidityStart] = useState<string>(() => todayStr());
+  const [validityEnd, setValidityEnd] = useState<string>(() => addDaysStr(todayStr(), 14));
+  const [validityNotes, setValidityNotes] = useState('');
 
   // Change Domain modal state
   const [editSlug, setEditSlug] = useState('');
@@ -145,10 +174,33 @@ export const OwnerClientsView: React.FC<OwnerClientsViewProps> = ({
     );
   });
 
+  const handleBillingCycleChange = (nextCycle: BillingCycle) => {
+    setBillingCycle(nextCycle);
+    const daysByCycle: Record<BillingCycle, number> = {
+      TRIAL: 14,
+      MONTHLY: 30,
+      QUARTERLY: 90,
+      YEARLY: 365,
+      CUSTOM: 30,
+    };
+    const base = startDate || todayStr();
+    setExpirationDate(addDaysStr(base, daysByCycle[nextCycle]));
+    if (nextCycle === 'TRIAL') {
+      setCustomPrice('0');
+    } else if (customPrice === '0') {
+      setCustomPrice('');
+    }
+  };
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setMessage('');
+    const daysCount = countDaysBetween(startDate, expirationDate);
+    if (daysCount <= 0) {
+      setError('Expiry date must be at least 1 day after the start date.');
+      return;
+    }
     setSaving(true);
     try {
       const res = await salarApi.createOrganization({
@@ -168,6 +220,10 @@ export const OwnerClientsView: React.FC<OwnerClientsViewProps> = ({
         portalAllocationId: portalAllocationId || undefined,
         customPrice: customPrice ? Number(customPrice) : null,
         initialAdminPasscode: initialAdminPasscode.trim() || undefined,
+        startDate,
+        expirationDate,
+        trialDays: billingCycle === 'TRIAL' ? daysCount : undefined,
+        customDays: billingCycle === 'CUSTOM' ? daysCount : undefined,
       });
       const portalPath = res.portalPath || res.organization.portalPath || `/p/${res.organization.portalSlug}`;
       const hadPasscode = Boolean(initialAdminPasscode.trim());
@@ -175,7 +231,10 @@ export const OwnerClientsView: React.FC<OwnerClientsViewProps> = ({
       setLastCreatedPortalPath(portalPath);
       setLastCreatedPasscodeSet(hadPasscode);
       setMessage(
-        `Provisioned ${res.organization.instituteName} (${res.organization.id}) on database ${res.organization.databaseId || 'isolated'} with license ${res.license.licenseKey}. Exam Portal ready at ${window.location.origin}${portalPath} (Admin: ${res.organization.email}${hadPasscode ? ' · Passcode pre-configured' : ' · Claim Admin Gate on first visit'}).`
+        `Provisioned ${res.organization.instituteName} (${res.organization.id}) on ${billingCycle} (${startDate} to ${res.license.expirationDate.slice(
+          0,
+          10
+        )}) with license ${res.license.licenseKey}. Exam Portal ready at ${window.location.origin}${portalPath}.`
       );
       setCreateOpen(false);
       setInstituteName('');
@@ -189,6 +248,9 @@ export const OwnerClientsView: React.FC<OwnerClientsViewProps> = ({
       setCustomDomain('');
       setCustomPrice('');
       setInitialAdminPasscode('');
+      setBillingCycle('MONTHLY');
+      setStartDate(todayStr());
+      setExpirationDate(addDaysStr(todayStr(), 30));
       await onRefresh();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to register client organization.');
@@ -264,6 +326,66 @@ export const OwnerClientsView: React.FC<OwnerClientsViewProps> = ({
       await onRefresh();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to update organization.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleOpenValidityModal = (org: Organization) => {
+    setError('');
+    const lic = data.licenses.find((l) => l.id === org.licenseId);
+    const startVal = (lic?.activationDate || todayStr()).slice(0, 10);
+    const isTrialNow = org.billingCycle === 'TRIAL';
+    setValidityOrg(org);
+    setValidityMode(isTrialNow ? 'TRIAL' : 'TRIAL');
+    setValidityCycle(isTrialNow ? 'TRIAL' : 'TRIAL');
+    setValidityStart(todayStr());
+    setValidityEnd(
+      lic && new Date(lic.expirationDate).getTime() > Date.now() && isTrialNow
+        ? lic.expirationDate.slice(0, 10)
+        : addDaysStr(todayStr(), 14)
+    );
+    setValidityNotes(lic?.notes || (startVal ? '' : ''));
+  };
+
+  const handleSaveValidity = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!validityOrg) return;
+    setError('');
+    setMessage('');
+
+    if (validityMode === 'QUICK_RENEW') {
+      await handleRenewLicense(validityOrg);
+      setValidityOrg(null);
+      return;
+    }
+
+    const daysCount = countDaysBetween(validityStart, validityEnd);
+    if (daysCount <= 0) {
+      setError('Expiry date must be after the start date.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const targetCycle: BillingCycle = validityMode === 'TRIAL' ? 'TRIAL' : validityCycle;
+      const res = await salarApi.assignClientValidity(validityOrg.id, {
+        mode: validityMode,
+        billingCycle: targetCycle,
+        startDate: validityStart,
+        expirationDate: validityEnd,
+        days: daysCount,
+        notes: validityNotes.trim() || undefined,
+      });
+      setMessage(
+        `${targetCycle === 'TRIAL' ? 'Assigned Trial' : 'Updated Validity'} for ${
+          res.organization.instituteName
+        }: ${validityStart} to ${res.license.expirationDate.slice(0, 10)} (${daysCount} days).`
+      );
+      setValidityOrg(null);
+      await onRefresh();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to update client validity dates.');
     } finally {
       setSaving(false);
     }
@@ -596,8 +718,12 @@ export const OwnerClientsView: React.FC<OwnerClientsViewProps> = ({
                   </button>
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-[11px] font-mono text-slate-600 pt-1 border-t border-slate-200/80">
-                  <span className="truncate">Key: {lic?.licenseKey || '—'}</span>
-                  <span className="text-right">Exp: {lic ? lic.expirationDate.slice(0, 10) : '—'}</span>
+                  <span className="truncate">
+                    {org.billingCycle} · {lic?.licenseKey || '—'}
+                  </span>
+                  <span className="text-right">
+                    Exp: {lic ? lic.expirationDate.slice(0, 10) : '—'}
+                  </span>
                   <span className="truncate">DB: {dbId} ({dbStatus})</span>
                   <span className="text-right">Client: {org.status}</span>
                 </div>
@@ -683,9 +809,9 @@ export const OwnerClientsView: React.FC<OwnerClientsViewProps> = ({
                   <button
                     type="button"
                     disabled={saving}
-                    onClick={() => handleRenewLicense(org)}
+                    onClick={() => handleOpenValidityModal(org)}
                     className="p-2 rounded-lg border border-[#E2E8F0] text-[#0032A0]"
-                    title="Renew License"
+                    title="Assign Trial / Validity Dates"
                   >
                     <CalendarPlus className="w-3.5 h-3.5" />
                   </button>
@@ -833,7 +959,41 @@ export const OwnerClientsView: React.FC<OwnerClientsViewProps> = ({
                     </td>
 
                     <td className="py-3.5 px-4 text-xs font-mono text-slate-700 tabular-nums whitespace-nowrap">
-                      {lic ? lic.expirationDate.slice(0, 10) : '—'}
+                      {lic ? (
+                        <button
+                          type="button"
+                          onClick={() => lic.status !== 'REVOKED' && handleOpenValidityModal(org)}
+                          className="text-left group"
+                          title="Click to assign Trial or change expiry date"
+                        >
+                          <span className="block group-hover:text-[#0032A0] group-hover:underline">
+                            {lic.expirationDate.slice(0, 10)}
+                          </span>
+                          {(() => {
+                            const rem = getDaysRemaining(lic.expirationDate);
+                            if (rem === null) return null;
+                            return (
+                              <span
+                                className={`block text-[10px] mt-0.5 ${
+                                  rem <= 0
+                                    ? 'text-red-600 font-semibold'
+                                    : rem <= 7
+                                    ? 'text-amber-700 font-semibold'
+                                    : org.billingCycle === 'TRIAL'
+                                    ? 'text-[#0032A0]'
+                                    : 'text-slate-400'
+                                }`}
+                              >
+                                {rem <= 0
+                                  ? 'Expired'
+                                  : `${rem}d left${org.billingCycle === 'TRIAL' ? ' · TRIAL' : ''}`}
+                              </span>
+                            );
+                          })()}
+                        </button>
+                      ) : (
+                        '—'
+                      )}
                     </td>
 
                     <td className="py-3.5 px-4 text-right">
@@ -937,9 +1097,9 @@ export const OwnerClientsView: React.FC<OwnerClientsViewProps> = ({
                           <button
                             type="button"
                             disabled={saving}
-                            onClick={() => handleRenewLicense(org)}
+                            onClick={() => handleOpenValidityModal(org)}
                             className="p-1.5 rounded border border-[#E2E8F0] text-[#0032A0] hover:bg-blue-50"
-                            title="Renew License"
+                            title="Assign Trial / Validity Dates"
                           >
                             <CalendarPlus className="w-3.5 h-3.5" />
                           </button>
@@ -1229,15 +1389,17 @@ export const OwnerClientsView: React.FC<OwnerClientsViewProps> = ({
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Billing Cycle</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Access / Billing Type</label>
                   <select
                     value={billingCycle}
-                    onChange={(e) => setBillingCycle(e.target.value as BillingCycle)}
+                    onChange={(e) => handleBillingCycleChange(e.target.value as BillingCycle)}
                     className="w-full px-3 py-2 text-sm border border-[#E2E8F0] rounded-lg bg-white"
                   >
+                    <option value="TRIAL">Trial (Date-Based)</option>
                     <option value="MONTHLY">Monthly</option>
                     <option value="QUARTERLY">Quarterly</option>
                     <option value="YEARLY">Yearly</option>
+                    <option value="CUSTOM">Custom Validity Date</option>
                   </select>
                 </div>
                 <div>
@@ -1257,9 +1419,87 @@ export const OwnerClientsView: React.FC<OwnerClientsViewProps> = ({
                     type="number"
                     value={customPrice}
                     onChange={(e) => setCustomPrice(e.target.value)}
-                    placeholder="Plan default"
+                    placeholder={billingCycle === 'TRIAL' ? '0 (Free Trial)' : 'Plan default'}
                     className="w-full px-3 py-2 text-sm font-mono border border-[#E2E8F0] rounded-lg"
                   />
+                </div>
+              </div>
+
+              {/* Date-Type Trial & Access Validity Window */}
+              <div className="p-3.5 bg-slate-50 border border-[#E2E8F0] rounded-lg space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-[#0F172A]">
+                    {billingCycle === 'TRIAL' ? 'Trial Validity Date Window' : 'Access Start & Expiry Dates'}
+                  </span>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {[
+                      { label: '3d Trial', days: 3 },
+                      { label: '7d Trial', days: 7 },
+                      { label: '14d Trial', days: 14 },
+                      { label: '30d Trial', days: 30 },
+                      { label: '90d', days: 90 },
+                    ].map((preset) => (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        onClick={() => {
+                          const base = startDate || todayStr();
+                          if (preset.days <= 30 && billingCycle !== 'CUSTOM') {
+                            setBillingCycle('TRIAL');
+                            setCustomPrice('0');
+                          }
+                          setExpirationDate(addDaysStr(base, preset.days));
+                        }}
+                        className={`px-2 py-1 text-[11px] font-mono rounded border transition-colors ${
+                          countDaysBetween(startDate, expirationDate) === preset.days
+                            ? 'bg-[#0032A0] text-white border-[#0032A0]'
+                            : 'bg-white text-slate-700 border-[#E2E8F0] hover:border-[#0032A0]'
+                        }`}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Start Date</label>
+                    <input
+                      type="date"
+                      required
+                      value={startDate}
+                      onChange={(e) => {
+                        const nextStart = e.target.value;
+                        const prevDays = Math.max(1, countDaysBetween(startDate, expirationDate));
+                        setStartDate(nextStart);
+                        if (nextStart) {
+                          setExpirationDate(addDaysStr(nextStart, prevDays));
+                        }
+                      }}
+                      className="w-full px-3 py-2 text-xs font-mono border border-[#E2E8F0] rounded-lg bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                      {billingCycle === 'TRIAL' ? 'Trial End / Expiry Date' : 'Expiry Date'}
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      min={addDaysStr(startDate, 1)}
+                      value={expirationDate}
+                      onChange={(e) => setExpirationDate(e.target.value)}
+                      className="w-full px-3 py-2 text-xs font-mono border border-[#E2E8F0] rounded-lg bg-white"
+                    />
+                  </div>
+                  <div className="text-xs font-mono text-slate-600 pb-2">
+                    Duration:{' '}
+                    <strong className="text-[#0032A0]">
+                      {countDaysBetween(startDate, expirationDate)} days
+                    </strong>
+                    {billingCycle === 'TRIAL' ? ' · Free Trial' : ''}
+                  </div>
                 </div>
               </div>
 
@@ -1530,6 +1770,227 @@ export const OwnerClientsView: React.FC<OwnerClientsViewProps> = ({
                 {saving ? 'Deleting Client...' : 'Delete Client Permanently'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Assign Trial / Validity Dates Modal */}
+      {validityOrg && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4">
+          <div className="bg-white border border-[#E2E8F0] rounded-xl w-full max-w-lg max-h-[92dvh] overflow-y-auto p-4 sm:p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
+              <div>
+                <p className="text-xs font-mono text-[#0032A0]">{validityOrg.id}</p>
+                <h3 className="font-display font-bold text-base text-[#0F172A]">
+                  Assign Trial &amp; Validity Dates — {validityOrg.instituteName}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setValidityOrg(null)}
+                className="text-slate-400 hover:text-slate-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {(() => {
+              const currentLic = data.licenses.find((l) => l.id === validityOrg.licenseId);
+              return (
+                <div className="p-3 bg-slate-50 border border-[#E2E8F0] rounded-lg text-xs font-mono flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-slate-600">
+                    Current: <strong className="text-[#0F172A]">{validityOrg.billingCycle}</strong> ·{' '}
+                    {currentLic?.status || validityOrg.status}
+                  </span>
+                  <span className="text-[#0032A0] font-semibold">
+                    Expires: {currentLic ? currentLic.expirationDate.slice(0, 10) : '—'}
+                  </span>
+                </div>
+              );
+            })()}
+
+            {/* Mode Selector Tabs */}
+            <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-100 rounded-lg">
+              <button
+                type="button"
+                onClick={() => {
+                  setValidityMode('TRIAL');
+                  setValidityCycle('TRIAL');
+                  setValidityEnd(addDaysStr(validityStart || todayStr(), 14));
+                }}
+                className={`px-2.5 py-2 text-xs font-semibold rounded-md transition-colors ${
+                  validityMode === 'TRIAL'
+                    ? 'bg-white text-[#0032A0] shadow-xs'
+                    : 'text-slate-600 hover:text-[#0F172A]'
+                }`}
+              >
+                Assign Trial
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setValidityMode('CUSTOM_DATE');
+                  setValidityCycle(
+                    validityOrg.billingCycle === 'TRIAL' ? 'CUSTOM' : validityOrg.billingCycle
+                  );
+                }}
+                className={`px-2.5 py-2 text-xs font-semibold rounded-md transition-colors ${
+                  validityMode === 'CUSTOM_DATE'
+                    ? 'bg-white text-[#0032A0] shadow-xs'
+                    : 'text-slate-600 hover:text-[#0F172A]'
+                }`}
+              >
+                Custom Dates
+              </button>
+              <button
+                type="button"
+                onClick={() => setValidityMode('QUICK_RENEW')}
+                className={`px-2.5 py-2 text-xs font-semibold rounded-md transition-colors ${
+                  validityMode === 'QUICK_RENEW'
+                    ? 'bg-white text-[#0032A0] shadow-xs'
+                    : 'text-slate-600 hover:text-[#0F172A]'
+                }`}
+              >
+                Quick Renew
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveValidity} className="space-y-4">
+              {validityMode === 'QUICK_RENEW' ? (
+                <div className="p-4 bg-blue-50/70 border border-blue-200 rounded-lg text-xs text-slate-700 space-y-1.5">
+                  <p className="font-semibold text-[#0032A0]">
+                    Extend {validityOrg.instituteName} by 1 full {validityOrg.billingCycle} cycle
+                  </p>
+                  <p>
+                    Restores ACTIVE portal access automatically and re-signs the organization license key.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Quick Duration Presets
+                    </label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {[3, 7, 14, 30, 60, 90, 365].map((days) => (
+                        <button
+                          key={days}
+                          type="button"
+                          onClick={() => {
+                            const base = validityStart || todayStr();
+                            setValidityEnd(addDaysStr(base, days));
+                          }}
+                          className={`px-2.5 py-1.5 text-xs font-mono rounded-lg border transition-colors ${
+                            countDaysBetween(validityStart, validityEnd) === days
+                              ? 'bg-[#0032A0] text-white border-[#0032A0]'
+                              : 'bg-white text-slate-700 border-[#E2E8F0] hover:border-[#0032A0]'
+                          }`}
+                        >
+                          {days === 365 ? '1 Year' : `${days} Days`}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {validityMode === 'CUSTOM_DATE' && (
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        License Type Label
+                      </label>
+                      <select
+                        value={validityCycle}
+                        onChange={(e) => setValidityCycle(e.target.value as BillingCycle)}
+                        className="w-full px-3 py-2 text-sm border border-[#E2E8F0] rounded-lg bg-white"
+                      >
+                        <option value="TRIAL">TRIAL (Date-Based Trial)</option>
+                        <option value="CUSTOM">CUSTOM (Exact Expiry Date)</option>
+                        <option value="MONTHLY">MONTHLY</option>
+                        <option value="QUARTERLY">QUARTERLY</option>
+                        <option value="YEARLY">YEARLY</option>
+                      </select>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Start Date
+                      </label>
+                      <input
+                        type="date"
+                        required
+                        value={validityStart}
+                        onChange={(e) => {
+                          const nextStart = e.target.value;
+                          const prevDays = Math.max(1, countDaysBetween(validityStart, validityEnd));
+                          setValidityStart(nextStart);
+                          if (nextStart) setValidityEnd(addDaysStr(nextStart, prevDays));
+                        }}
+                        className="w-full px-3 py-2 text-sm font-mono border border-[#E2E8F0] rounded-lg"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        {validityMode === 'TRIAL' ? 'Trial End Date *' : 'Expiry Date *'}
+                      </label>
+                      <input
+                        type="date"
+                        required
+                        min={addDaysStr(validityStart, 1)}
+                        value={validityEnd}
+                        onChange={(e) => setValidityEnd(e.target.value)}
+                        className="w-full px-3 py-2 text-sm font-mono border border-[#E2E8F0] rounded-lg"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="px-3 py-2 bg-slate-50 border border-[#E2E8F0] rounded-lg text-xs font-mono flex items-center justify-between">
+                    <span className="text-slate-600">Assigned Period:</span>
+                    <span className="font-bold text-[#0032A0]">
+                      {countDaysBetween(validityStart, validityEnd)} days ({validityStart} to {validityEnd})
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Note (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={validityNotes}
+                      onChange={(e) => setValidityNotes(e.target.value)}
+                      placeholder="e.g. 14-day pilot demo approved by SALAR Owner"
+                      className="w-full px-3 py-2 text-sm border border-[#E2E8F0] rounded-lg"
+                    />
+                  </div>
+                </>
+              )}
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#E2E8F0]">
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => setValidityOrg(null)}
+                  className="px-4 py-2 text-xs font-semibold border border-[#E2E8F0] rounded-lg hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-[#0032A0] hover:bg-[#00257a] text-white rounded-lg disabled:opacity-60"
+                >
+                  <CalendarPlus className="w-3.5 h-3.5" />
+                  {saving
+                    ? 'Saving...'
+                    : validityMode === 'QUICK_RENEW'
+                    ? 'Renew 1 Cycle'
+                    : validityMode === 'TRIAL'
+                    ? 'Save Trial Dates'
+                    : 'Save Validity Dates'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

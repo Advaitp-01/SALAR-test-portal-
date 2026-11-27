@@ -1098,6 +1098,50 @@ export function createSalarRouter(): express.Router {
   // =========================================================================
   // 4. CLIENT ORGANIZATIONS MANAGEMENT
   // =========================================================================
+  function resolveValidityWindow(opts: {
+    billingCycle: BillingCycle;
+    startDate?: unknown;
+    expirationDate?: unknown;
+    trialDays?: unknown;
+    customDays?: unknown;
+    fallbackStartIso: string;
+  }): { startIso: string; expIso: string } | { error: string } {
+    let startIso = opts.fallbackStartIso;
+    if (typeof opts.startDate === 'string' && opts.startDate.trim()) {
+      const rawStart = opts.startDate.trim();
+      const parsedStart = /^\d{4}-\d{2}-\d{2}$/.test(rawStart)
+        ? new Date(`${rawStart}T00:00:00.000Z`)
+        : new Date(rawStart);
+      if (Number.isNaN(parsedStart.getTime())) {
+        return { error: 'Invalid start date format.' };
+      }
+      startIso = parsedStart.toISOString();
+    }
+
+    const explicitDays = Number(opts.trialDays || opts.customDays || 0);
+    let expIso = '';
+
+    if (typeof opts.expirationDate === 'string' && opts.expirationDate.trim()) {
+      const rawExp = opts.expirationDate.trim();
+      const parsedExp = /^\d{4}-\d{2}-\d{2}$/.test(rawExp)
+        ? new Date(`${rawExp}T23:59:59.999Z`)
+        : new Date(rawExp);
+      if (Number.isNaN(parsedExp.getTime())) {
+        return { error: 'Invalid expiry date format.' };
+      }
+      if (parsedExp.getTime() <= new Date(startIso).getTime()) {
+        return { error: 'Expiry date must be after the start date.' };
+      }
+      expIso = parsedExp.toISOString();
+    } else if (explicitDays > 0) {
+      expIso = addPeriodToIso(startIso, 'CUSTOM', explicitDays);
+    } else {
+      expIso = addPeriodToIso(startIso, opts.billingCycle, opts.billingCycle === 'TRIAL' ? 14 : 30);
+    }
+
+    return { startIso, expIso };
+  }
+
   router.post('/owner/organizations', requireOwnerAuth, (req: AuthenticatedOwnerRequest, res: Response) => {
     const db = readSalarDb();
     const body = req.body || {};
@@ -1175,7 +1219,20 @@ export function createSalarRouter(): express.Router {
     const studentCapacity = Number(body.studentCapacity) || plan.studentLimit;
     const examCapacity = Number(body.examCapacity) || plan.examLimit;
     const storageLimitMb = Number(body.storageLimitMb) || plan.storageLimitMb;
-    const expIso = addPeriodToIso(now, billingCycle);
+
+    const validityWindow = resolveValidityWindow({
+      billingCycle,
+      startDate: body.startDate,
+      expirationDate: body.expirationDate,
+      trialDays: body.trialDays,
+      customDays: body.customDays,
+      fallbackStartIso: now,
+    });
+    if ('error' in validityWindow) {
+      res.status(400).json({ error: validityWindow.error });
+      return;
+    }
+    const { startIso, expIso } = validityWindow;
 
     const licId = `lic-${crypto.randomBytes(5).toString('hex')}`;
     const licenseKey = generateLicenseKey(shortCode, plan.code);
@@ -1289,7 +1346,7 @@ export function createSalarRouter(): express.Router {
       planCode: plan.code,
       portalAllocationId: allocation.id,
       issueDate: now,
-      activationDate: now,
+      activationDate: startIso,
       expirationDate: expIso,
       renewalDate: expIso,
       billingCycle,
@@ -1357,14 +1414,15 @@ export function createSalarRouter(): express.Router {
       totalAmount,
       currency: 'INR',
       status: 'ACTIVE',
-      currentPeriodStart: now,
+      currentPeriodStart: startIso,
       currentPeriodEnd: expIso,
-      autoRenew: true,
+      autoRenew: billingCycle !== 'TRIAL',
       createdAt: now,
       updatedAt: now,
     });
 
     db.counters.invoiceSeq += 1;
+    const isFreeTrial = billingCycle === 'TRIAL' && totalAmount === 0;
     db.subscriptionInvoices.unshift({
       id: `inv-${crypto.randomBytes(4).toString('hex')}`,
       invoiceNumber: `SALAR-INV-${new Date().getFullYear()}-${String(db.counters.invoiceSeq).padStart(4, '0')}`,
@@ -1376,8 +1434,11 @@ export function createSalarRouter(): express.Router {
       gstAmount,
       totalAmount,
       dueDate: now.slice(0, 10),
-      status: 'PENDING',
-      description: `${plan.name} (${billingCycle}) — ${allocation.code}`,
+      paidAt: isFreeTrial ? now : undefined,
+      status: isFreeTrial ? 'PAID' : 'PENDING',
+      description: isFreeTrial
+        ? `${plan.name} (Trial until ${expIso.slice(0, 10)}) — ${allocation.code}`
+        : `${plan.name} (${billingCycle}) — ${allocation.code}`,
       createdAt: now,
     });
 
@@ -1711,6 +1772,113 @@ export function createSalarRouter(): express.Router {
     });
     writeSalarDb(db);
     res.json({ organization: org });
+  });
+
+  router.post('/owner/organizations/:id/validity', requireOwnerAuth, (req: AuthenticatedOwnerRequest, res: Response) => {
+    const db = readSalarDb();
+    const org = db.organizations.find((o) => o.id === req.params.id);
+    if (!org) {
+      res.status(404).json({ error: 'Organization not found.' });
+      return;
+    }
+    const lic = db.licenses.find((l) => l.id === org.licenseId);
+    if (!lic) {
+      res.status(404).json({ error: `No license record found for ${org.instituteName}.` });
+      return;
+    }
+    if (lic.status === 'REVOKED') {
+      res.status(409).json({ error: 'Revoked licenses cannot be modified. Issue a fresh license key.' });
+      return;
+    }
+
+    const body = req.body || {};
+    const now = new Date().toISOString();
+    const requestedCycle = String(body.billingCycle || (body.mode === 'TRIAL' ? 'TRIAL' : lic.billingCycle || 'CUSTOM'))
+      .trim()
+      .toUpperCase() as BillingCycle;
+    const validCycles: BillingCycle[] = ['TRIAL', 'MONTHLY', 'QUARTERLY', 'YEARLY', 'CUSTOM'];
+    const nextCycle: BillingCycle = validCycles.includes(requestedCycle) ? requestedCycle : 'CUSTOM';
+
+    const validityWindow = resolveValidityWindow({
+      billingCycle: nextCycle,
+      startDate: body.startDate,
+      expirationDate: body.expirationDate,
+      trialDays: body.trialDays ?? body.days,
+      customDays: body.customDays ?? body.days,
+      fallbackStartIso: now,
+    });
+    if ('error' in validityWindow) {
+      res.status(400).json({ error: validityWindow.error });
+      return;
+    }
+
+    const { startIso, expIso } = validityWindow;
+    const isFutureExp = new Date(expIso).getTime() > Date.now();
+    const fromStatus = lic.status;
+
+    lic.billingCycle = nextCycle;
+    lic.activationDate = startIso;
+    lic.expirationDate = expIso;
+    lic.renewalDate = expIso;
+    lic.status = isFutureExp ? 'ACTIVE' : 'EXPIRED';
+    lic.signature = signLicensePayload(lic.licenseKey, org.id, lic.planCode, expIso);
+    if (typeof body.notes === 'string' && body.notes.trim()) {
+      lic.notes = body.notes.trim();
+    }
+    lic.updatedAt = now;
+
+    org.billingCycle = nextCycle;
+    if (org.status !== 'ARCHIVED') {
+      org.status = isFutureExp ? 'ACTIVE' : 'SUSPENDED';
+    }
+    org.updatedAt = now;
+
+    const tenant = db.tenants.find((t) => t.id === org.tenantId);
+    if (tenant && org.status !== 'ARCHIVED') {
+      tenant.status = isFutureExp ? 'ACTIVE' : 'SUSPENDED';
+      tenant.updatedAt = now;
+    }
+
+    const sub = db.subscriptions.find((s) => s.organizationId === org.id);
+    if (sub) {
+      sub.billingCycle = nextCycle;
+      sub.currentPeriodStart = startIso;
+      sub.currentPeriodEnd = expIso;
+      sub.status = isFutureExp ? 'ACTIVE' : 'EXPIRED';
+      sub.autoRenew = nextCycle !== 'TRIAL';
+      sub.updatedAt = now;
+    }
+
+    const dayCount = Math.max(
+      1,
+      Math.ceil((new Date(expIso).getTime() - new Date(startIso).getTime()) / (1000 * 60 * 60 * 24))
+    );
+    const summaryLabel =
+      nextCycle === 'TRIAL'
+        ? `Assigned ${dayCount}-day trial (${startIso.slice(0, 10)} to ${expIso.slice(0, 10)})`
+        : `Updated validity dates (${startIso.slice(0, 10)} to ${expIso.slice(0, 10)}, ${nextCycle})`;
+
+    appendLicenseEvent(db, {
+      licenseId: lic.id,
+      licenseKey: lic.licenseKey,
+      fromStatus,
+      toStatus: lic.status,
+      actor: req.ownerUsername || 'OWNER',
+      reason: body.notes ? `${summaryLabel} · ${String(body.notes).trim()}` : summaryLabel,
+    });
+    appendAuditLog(db, {
+      actor: req.ownerUsername || 'OWNER',
+      actorType: 'OWNER',
+      action: nextCycle === 'TRIAL' ? 'CLIENT_TRIAL_ASSIGNED' : 'CLIENT_VALIDITY_UPDATED',
+      resourceType: 'Organization',
+      resourceId: org.id,
+      ip: getClientIp(req),
+      details: `${org.instituteName}: ${summaryLabel}`,
+      status: 'SUCCESS',
+    });
+
+    writeSalarDb(db);
+    res.json({ organization: org, license: lic });
   });
 
   router.get('/owner/organizations/:id/export', requireOwnerAuth, (req: AuthenticatedOwnerRequest, res: Response) => {
