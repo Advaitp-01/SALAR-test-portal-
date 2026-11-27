@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { collection, getDocs, orderBy, query } from '../../lib/tenantDb';
+import { collection, doc, getDocs, orderBy, query, updateDoc } from '../../lib/tenantDb';
 import { db } from '../../lib/firebase';
+import { compressImageBlobToDataUrl } from '../../lib/portalService';
 import {
   AlertTriangle,
   Check,
@@ -103,10 +104,47 @@ export const ShareExamModal: React.FC<ShareExamModalProps> = ({
       }
     })();
 
-    getDocs(query(collection(db, 'exams', exam.id, 'questions'), orderBy('orderIndex', 'asc')))
-      .then((snap) => {
+    Promise.all([
+      getDocs(query(collection(db, 'exams', exam.id, 'questions'), orderBy('orderIndex', 'asc'))),
+      fetch('/api/salar/cloud/status', { credentials: 'include' })
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null),
+    ])
+      .then(async ([snap, cloudStatus]) => {
         if (!active) return;
-        const questions = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const isEphemeralServer = Boolean(cloudStatus && cloudStatus.persistent === false);
+        const rawQuestions = snap.docs.map((d) => ({
+          id: d.id,
+          ...(d.data() as Record<string, unknown>),
+        })) as Array<Record<string, unknown> & { id: string; questionImageUrl?: string }>;
+
+        const questions = await Promise.all(
+          rawQuestions.map(async (q) => {
+            const url = typeof q.questionImageUrl === 'string' ? q.questionImageUrl : '';
+            if (isEphemeralServer && url.startsWith('/api/files/')) {
+              try {
+                const imgResp = await fetch(url, { cache: 'force-cache' });
+                if (imgResp.ok) {
+                  const blob = await imgResp.blob();
+                  if (blob.type.startsWith('image/')) {
+                    const dataUrl = await compressImageBlobToDataUrl(blob);
+                    if (dataUrl && dataUrl.startsWith('data:image/')) {
+                      void updateDoc(doc(db, 'exams', exam.id, 'questions', q.id), {
+                        questionImageUrl: dataUrl,
+                      }).catch(() => {});
+                      return { ...q, questionImageUrl: dataUrl };
+                    }
+                  }
+                }
+              } catch {
+                // ignore if unreadable
+              }
+            }
+            return q;
+          })
+        );
+
+        if (!active) return;
         return fetch('/api/public/cbt/publish-snapshot', {
           method: 'POST',
           credentials: 'include',

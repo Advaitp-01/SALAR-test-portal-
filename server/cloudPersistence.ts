@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { NextFunction, Request, Response } from 'express';
-import { ADMIN_CRED_FILE, DATA_DIR, IS_VERCEL, TENANTS_DIR } from './runtimePaths.ts';
+import { ADMIN_CRED_FILE, DATA_DIR, IS_VERCEL, TENANTS_DIR, UPLOADS_DIR } from './runtimePaths.ts';
 
 export type PersistenceMode = 'UPSTASH_KV' | 'VERCEL_BLOB' | 'LOCAL_DISK' | 'EPHEMERAL_TMP';
 
@@ -604,4 +604,133 @@ export function cloudPersistenceMiddleware(req: Request, res: Response, next: Ne
   }) as typeof res.send;
 
   void ensureCloudHydrated().finally(() => next());
+}
+
+export async function persistUploadedFileToCloud(
+  safeName: string,
+  buffer: Buffer,
+  mimeType: string
+): Promise<{ persistent: boolean }> {
+  if (!safeName || !/^[a-zA-Z0-9_.\-]+$/.test(safeName)) {
+    return { persistent: false };
+  }
+  const remote = getRemoteConfig();
+  if (!remote) {
+    return { persistent: !IS_VERCEL };
+  }
+
+  try {
+    if (remote.kind === 'VERCEL_BLOB') {
+      const putUrl = `https://blob.vercel-storage.com/salar-uploads/${encodeURIComponent(safeName)}`;
+      const resp = await fetch(putUrl, {
+        method: 'PUT',
+        headers: {
+          authorization: `Bearer ${remote.token}`,
+          'x-api-version': '7',
+          'x-add-random-suffix': '0',
+          'x-allow-overwrite': '1',
+          'x-content-type': mimeType,
+          'content-type': mimeType,
+        },
+        body: new Uint8Array(buffer),
+      });
+      if (!resp.ok) {
+        const txt = await resp.text().catch(() => '');
+        console.error(`[cloudPersistence] blob upload failed HTTP ${resp.status}: ${txt.slice(0, 160)}`);
+        return { persistent: false };
+      }
+      return { persistent: true };
+    }
+
+    if (remote.kind === 'UPSTASH_KV') {
+      // Keep Upstash single-key payload reasonable (< 4 MB raw binary)
+      if (buffer.length > 4 * 1024 * 1024) {
+        return { persistent: false };
+      }
+      const payload = JSON.stringify({
+        mimeType,
+        data: buffer.toString('base64'),
+      });
+      await kvPipeline(remote, [['SET', `${KV_PREFIX}file:${safeName}`, payload]]);
+      return { persistent: true };
+    }
+  } catch (err) {
+    console.error('[cloudPersistence] upload persist error:', err);
+  }
+  return { persistent: false };
+}
+
+export async function loadUploadedFileFromCloud(
+  safeName: string
+): Promise<{ buffer: Buffer; mimeType?: string } | null> {
+  if (!safeName || !/^[a-zA-Z0-9_.\-]+$/.test(safeName)) {
+    return null;
+  }
+  const remote = getRemoteConfig();
+  if (!remote) return null;
+
+  try {
+    let buffer: Buffer | null = null;
+    let mimeType: string | undefined;
+
+    if (remote.kind === 'VERCEL_BLOB') {
+      const targetPathname = `salar-uploads/${safeName}`;
+      const listResp = await fetch(
+        `https://blob.vercel-storage.com?prefix=${encodeURIComponent(targetPathname)}`,
+        {
+          headers: {
+            authorization: `Bearer ${remote.token}`,
+            'x-api-version': '7',
+          },
+          cache: 'no-store',
+        }
+      );
+      if (!listResp.ok) return null;
+      const listData = (await listResp.json()) as {
+        blobs?: Array<{ url: string; pathname: string }>;
+      };
+      const match = Array.isArray(listData.blobs)
+        ? listData.blobs.find((b) => b.pathname === targetPathname)
+        : undefined;
+      if (!match?.url) return null;
+
+      let fileResp = await fetch(match.url, {
+        headers: { authorization: `Bearer ${remote.token}` },
+        cache: 'no-store',
+      });
+      if (!fileResp.ok) {
+        fileResp = await fetch(match.url, { cache: 'no-store' });
+      }
+      if (!fileResp.ok) return null;
+      const arrBuf = await fileResp.arrayBuffer();
+      buffer = Buffer.from(arrBuf);
+      mimeType = fileResp.headers.get('content-type') || undefined;
+    } else if (remote.kind === 'UPSTASH_KV') {
+      const res = await kvPipeline(remote, [['GET', `${KV_PREFIX}file:${safeName}`]]);
+      const raw = typeof res[0]?.result === 'string' ? res[0].result : null;
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as { mimeType?: string; data?: string };
+      if (!parsed.data) return null;
+      buffer = Buffer.from(parsed.data, 'base64');
+      mimeType = parsed.mimeType;
+    }
+
+    if (!buffer || buffer.length === 0) return null;
+
+    // Warm local cache in UPLOADS_DIR for subsequent requests on this container
+    try {
+      const targetPath = path.resolve(UPLOADS_DIR, safeName);
+      if (targetPath.startsWith(UPLOADS_DIR + path.sep)) {
+        fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+        fs.writeFileSync(targetPath, buffer);
+      }
+    } catch {
+      // non-fatal cache write error
+    }
+
+    return { buffer, mimeType };
+  } catch (err) {
+    console.error('[cloudPersistence] upload load error:', err);
+    return null;
+  }
 }

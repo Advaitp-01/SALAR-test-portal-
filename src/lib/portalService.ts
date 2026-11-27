@@ -106,7 +106,67 @@ export function exportToCsv(filename: string, headers: string[], rows: Array<Arr
   URL.revokeObjectURL(url);
 }
 
-export async function uploadFileToServer(file: File): Promise<{ url: string; fileName: string; fileSize: string }> {
+export async function compressImageBlobToDataUrl(
+  blob: Blob,
+  fallbackDataUrl?: string
+): Promise<string> {
+  if (blob.size <= 180 * 1024 && fallbackDataUrl && fallbackDataUrl.startsWith('data:image/')) {
+    return fallbackDataUrl;
+  }
+
+  return new Promise<string>((resolve) => {
+    const objectUrl = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const maxDim = 1400;
+        let w = img.naturalWidth || img.width || 800;
+        let h = img.naturalHeight || img.height || 600;
+        if (w > maxDim || h > maxDim) {
+          const ratio = Math.min(maxDim / w, maxDim / h);
+          w = Math.max(1, Math.round(w * ratio));
+          h = Math.max(1, Math.round(h * ratio));
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          URL.revokeObjectURL(objectUrl);
+          resolve(fallbackDataUrl || '');
+          return;
+        }
+        // White background handles transparent PNG screenshots cleanly when exported as WebP/JPEG
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+
+        let dataUrl = canvas.toDataURL('image/webp', 0.88);
+        if (!dataUrl.startsWith('data:image/webp')) {
+          dataUrl = canvas.toDataURL('image/jpeg', 0.86);
+        }
+        if (dataUrl.length > 480_000) {
+          dataUrl = canvas.toDataURL('image/jpeg', 0.72);
+        }
+        URL.revokeObjectURL(objectUrl);
+        resolve(dataUrl);
+      } catch {
+        URL.revokeObjectURL(objectUrl);
+        resolve(fallbackDataUrl || '');
+      }
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(fallbackDataUrl || '');
+    };
+    img.src = objectUrl;
+  });
+}
+
+export async function uploadFileToServer(
+  file: File
+): Promise<{ url: string; fileName: string; fileSize: string; persistent?: boolean }> {
   const base64Data = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result || ''));
@@ -114,20 +174,51 @@ export async function uploadFileToServer(file: File): Promise<{ url: string; fil
     reader.readAsDataURL(file);
   });
 
-  const resp = await fetch('/api/files/upload', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      fileName: file.name,
-      mimeType: file.type,
-      base64Data,
-    }),
-  });
-  const data = await resp.json();
-  if (!resp.ok) {
-    throw new Error(data.error || 'File upload failed');
+  const isImage = file.type.startsWith('image/');
+
+  try {
+    const resp = await fetch('/api/files/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fileName: file.name,
+        mimeType: file.type,
+        base64Data,
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      throw new Error(data.error || 'File upload failed');
+    }
+    // On ephemeral serverless environments without Vercel Blob / Upstash KV configured,
+    // embed a compact self-contained Data URL for images so every student sees the diagram
+    // regardless of which serverless instance handles their request.
+    if (isImage && data.persistent === false) {
+      const compactUrl = await compressImageBlobToDataUrl(file, base64Data);
+      if (compactUrl) {
+        return {
+          url: compactUrl,
+          fileName: data.fileName || file.name,
+          fileSize: data.fileSize || `${Math.max(1, Math.round(file.size / 1024))} KB`,
+          persistent: true,
+        };
+      }
+    }
+    return data;
+  } catch (err) {
+    if (isImage) {
+      const compactUrl = await compressImageBlobToDataUrl(file, base64Data);
+      if (compactUrl && compactUrl.length <= 650_000) {
+        return {
+          url: compactUrl,
+          fileName: file.name,
+          fileSize: `${Math.max(1, Math.round(file.size / 1024))} KB`,
+          persistent: true,
+        };
+      }
+    }
+    throw err;
   }
-  return data;
 }
 
 export async function extractMathQuestionsWithOCR(params: {

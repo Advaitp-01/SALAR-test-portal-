@@ -8,7 +8,12 @@ import { GoogleGenAI, Type } from '@google/genai';
 import { createSalarRouter, telemetryMiddleware } from './salarRouter.ts';
 import { SERVER_KEYS } from './salarStore.ts';
 import { ADMIN_CRED_FILE, ROOT_DIR, UPLOADS_DIR } from './runtimePaths.ts';
-import { cloudPersistenceMiddleware, markCloudDirty } from './cloudPersistence.ts';
+import {
+  cloudPersistenceMiddleware,
+  loadUploadedFileFromCloud,
+  markCloudDirty,
+  persistUploadedFileToCloud,
+} from './cloudPersistence.ts';
 
 dotenv.config();
 
@@ -311,7 +316,7 @@ export function createApiApp(): Express {
   });
 
   // File Upload & Download Storage Endpoints
-  app.post('/api/files/upload', (req: Request, res: Response) => {
+  app.post('/api/files/upload', async (req: Request, res: Response) => {
     try {
       const fileName = typeof req.body?.fileName === 'string' ? req.body.fileName : 'upload';
       const mimeType = typeof req.body?.mimeType === 'string' ? req.body.mimeType.toLowerCase() : '';
@@ -348,6 +353,9 @@ export function createApiApp(): Express {
       }
 
       fs.writeFileSync(targetPath, buffer);
+      const resolvedMime = EXT_TO_MIME[inferredExt] || 'application/octet-stream';
+      const cloudStatus = await persistUploadedFileToCloud(uniqueName, buffer, resolvedMime);
+
       const sizeKb = buffer.length / 1024;
       const fileSize = sizeKb >= 1024 ? `${(sizeKb / 1024).toFixed(2)} MB` : `${Math.max(1, Math.round(sizeKb))} KB`;
 
@@ -356,6 +364,7 @@ export function createApiApp(): Express {
         storedName: uniqueName,
         fileName: path.basename(fileName),
         fileSize,
+        persistent: cloudStatus.persistent,
       });
     } catch (err) {
       console.error('File upload failed:', err);
@@ -363,13 +372,17 @@ export function createApiApp(): Express {
     }
   });
 
-  app.get('/api/files/:filename', (req: Request, res: Response) => {
+  app.get('/api/files/:filename', async (req: Request, res: Response) => {
     const rawName = String(req.params.filename || '');
     const safeName = path.basename(rawName);
     if (!safeName || safeName !== rawName || !/^[a-zA-Z0-9_.\-]+$/.test(safeName)) {
       res.status(400).json({ error: 'Invalid filename.' });
       return;
     }
+
+    const ext = path.extname(safeName).toLowerCase();
+    const fallbackMime = EXT_TO_MIME[ext] || 'application/octet-stream';
+    const asAttachment = req.query.download === '1';
 
     let resolvedPath = path.resolve(UPLOADS_DIR, safeName);
     if (!resolvedPath.startsWith(UPLOADS_DIR + path.sep) || !fs.existsSync(resolvedPath)) {
@@ -378,15 +391,21 @@ export function createApiApp(): Express {
       if (fallbackPath.startsWith(bundledUploads + path.sep) && fs.existsSync(fallbackPath)) {
         resolvedPath = fallbackPath;
       } else {
+        const recovered = await loadUploadedFileFromCloud(safeName);
+        if (recovered) {
+          res.setHeader('Content-Type', recovered.mimeType || fallbackMime);
+          res.setHeader('Cache-Control', 'public, max-age=86400');
+          res.setHeader('Content-Disposition', `${asAttachment ? 'attachment' : 'inline'}; filename="${safeName}"`);
+          res.send(recovered.buffer);
+          return;
+        }
         res.status(404).json({ error: 'File not found.' });
         return;
       }
     }
 
-    const ext = path.extname(safeName).toLowerCase();
-    const mime = EXT_TO_MIME[ext] || 'application/octet-stream';
-    res.setHeader('Content-Type', mime);
-    const asAttachment = req.query.download === '1';
+    res.setHeader('Content-Type', fallbackMime);
+    res.setHeader('Cache-Control', 'public, max-age=86400');
     res.setHeader('Content-Disposition', `${asAttachment ? 'attachment' : 'inline'}; filename="${safeName}"`);
     fs.createReadStream(resolvedPath).pipe(res);
   });

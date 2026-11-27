@@ -11,6 +11,7 @@ import {
   Grid,
   Send,
   X,
+  ZoomIn,
 } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestoreError';
@@ -64,6 +65,8 @@ export const CBTExamInterface: React.FC<CBTExamInterfaceProps> = ({
   const [confirmSubmit, setConfirmSubmit] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [zoomImageUrl, setZoomImageUrl] = useState<string | null>(null);
+  const [brokenImageIds, setBrokenImageIds] = useState<Record<string, boolean>>({});
 
   const expiresAtRef = useRef<number>(Date.now() + exam.durationMinutes * 60 * 1000);
   const autoSubmittedRef = useRef(false);
@@ -626,7 +629,9 @@ export const CBTExamInterface: React.FC<CBTExamInterfaceProps> = ({
           <div className="bg-white border border-[#E2E8F0] rounded-xl p-6 space-y-4">
             <h2 className="font-display font-bold text-lg text-[#0F172A]">Answer Key &amp; Response Analysis</h2>
             <div className="space-y-3">
-              {(attemptRecord.questionResults || []).map((res, idx) => (
+              {(attemptRecord.questionResults || []).map((res, idx) => {
+                const matchedQ = questions.find((q) => q.id === res.questionId);
+                return (
                 <div key={res.questionId} className="border border-[#E2E8F0] rounded-lg p-4 space-y-2">
                   <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
                     <span className="font-bold text-[#0032A0]">Question {idx + 1}</span>
@@ -642,9 +647,19 @@ export const CBTExamInterface: React.FC<CBTExamInterfaceProps> = ({
                       {res.status} ({res.marksAwarded > 0 ? `+${res.marksAwarded}` : res.marksAwarded} / {res.maxMarks})
                     </span>
                   </div>
-                  <div className="text-sm text-slate-800">
-                    <MathText text={res.questionText} />
-                  </div>
+                  {res.questionText && (
+                    <div className="text-sm text-slate-800">
+                      <MathText text={res.questionText} />
+                    </div>
+                  )}
+                  {matchedQ?.questionImageUrl && (
+                    <img
+                      src={matchedQ.questionImageUrl}
+                      alt={`Question ${idx + 1}`}
+                      referrerPolicy="no-referrer"
+                      className="max-h-52 rounded-lg border border-[#E2E8F0] object-contain bg-white"
+                    />
+                  )}
                   <div className="flex flex-wrap gap-4 text-xs font-mono pt-1">
                     <span>
                       Your Answer: <strong className="text-[#0F172A]">{res.candidateAnswer || 'Not Attempted'}</strong>
@@ -654,7 +669,8 @@ export const CBTExamInterface: React.FC<CBTExamInterfaceProps> = ({
                     </span>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
@@ -733,12 +749,37 @@ export const CBTExamInterface: React.FC<CBTExamInterfaceProps> = ({
                 )}
 
                 {currentQuestion.questionImageUrl && (
-                  <img
-                    src={currentQuestion.questionImageUrl}
-                    alt={`Question ${currentIdx + 1}`}
-                    referrerPolicy="no-referrer"
-                    className="max-h-72 rounded-lg border border-[#E2E8F0] object-contain"
-                  />
+                  brokenImageIds[currentQuestion.id] ? (
+                    <div className="p-4 rounded-lg border border-amber-200 bg-amber-50 text-xs text-amber-800 flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      <span>
+                        Question {currentIdx + 1} diagram could not be loaded. Please ask your faculty to re-upload this image from Exams Management.
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="relative inline-block group max-w-full">
+                      <button
+                        type="button"
+                        onClick={() => setZoomImageUrl(currentQuestion.questionImageUrl || null)}
+                        className="block text-left rounded-lg border border-[#E2E8F0] overflow-hidden bg-white hover:border-[#2563EB] transition-colors"
+                        title="Click to zoom diagram"
+                      >
+                        <img
+                          src={currentQuestion.questionImageUrl}
+                          alt={`Question ${currentIdx + 1}`}
+                          referrerPolicy="no-referrer"
+                          onError={() =>
+                            setBrokenImageIds((prev) => ({ ...prev, [currentQuestion.id]: true }))
+                          }
+                          className="max-h-72 max-w-full object-contain"
+                        />
+                      </button>
+                      <span className="mt-1 inline-flex items-center gap-1 text-[11px] font-mono text-slate-500">
+                        <ZoomIn className="w-3 h-3" />
+                        Tap diagram to zoom
+                      </span>
+                    </div>
+                  )
                 )}
 
                 {/* Options / Input */}
@@ -1008,6 +1049,33 @@ export const CBTExamInterface: React.FC<CBTExamInterfaceProps> = ({
                 {submitting ? 'Submitting...' : 'Confirm & Submit'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* Zoomed Diagram Lightbox */}
+      {zoomImageUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 p-4"
+          onClick={() => setZoomImageUrl(null)}
+        >
+          <div
+            className="relative bg-white rounded-xl p-3 max-w-4xl max-h-[90vh] overflow-auto shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setZoomImageUrl(null)}
+              className="absolute top-3 right-3 p-1.5 rounded-lg bg-slate-900/75 text-white hover:bg-slate-900"
+              aria-label="Close zoomed diagram"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <img
+              src={zoomImageUrl}
+              alt="Zoomed question diagram"
+              referrerPolicy="no-referrer"
+              className="max-w-full max-h-[82vh] object-contain mx-auto rounded-lg"
+            />
           </div>
         </div>
       )}
