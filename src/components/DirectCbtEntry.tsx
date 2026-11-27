@@ -210,6 +210,7 @@ export const DirectCbtEntry: React.FC<DirectCbtEntryProps> = ({
         initialQuestions={questions}
         directCandidate={activeCandidate}
         orgId={resolvedOrgId}
+        instituteName={instituteName}
         onExit={() => {
           setActiveCandidate(null);
           onExitToPortal();

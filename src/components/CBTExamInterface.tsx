@@ -18,6 +18,7 @@ import { handleFirestoreError, OperationType } from '../lib/firestoreError';
 import { gradeExamAttempt } from '../lib/portalService';
 import { useAuth } from '../context/AuthContext';
 import { MathText } from './MathText';
+import { ExamScorecardView } from './ExamScorecardView';
 import type { Exam, ExamAttempt, ExamQuestion, StudentAnswerEntry } from '../types/portal';
 
 export interface DirectCandidateInfo {
@@ -35,6 +36,7 @@ interface CBTExamInterfaceProps {
   initialQuestions?: ExamQuestion[];
   directCandidate?: DirectCandidateInfo | null;
   orgId?: string;
+  instituteName?: string;
   skipInstructions?: boolean;
   onExit: () => void;
 }
@@ -45,6 +47,7 @@ export const CBTExamInterface: React.FC<CBTExamInterfaceProps> = ({
   initialQuestions,
   directCandidate,
   orgId,
+  instituteName,
   skipInstructions = false,
   onExit,
 }) => {
@@ -69,6 +72,7 @@ export const CBTExamInterface: React.FC<CBTExamInterfaceProps> = ({
   const [brokenImageIds, setBrokenImageIds] = useState<Record<string, boolean>>({});
 
   const expiresAtRef = useRef<number>(Date.now() + exam.durationMinutes * 60 * 1000);
+  const startedAtRef = useRef<string>(new Date().toISOString());
   const autoSubmittedRef = useRef(false);
 
   const activeCandidateUid = directCandidate?.uid || firebaseUser?.uid || '';
@@ -210,7 +214,7 @@ export const CBTExamInterface: React.FC<CBTExamInterfaceProps> = ({
           examCode: exam.code,
           studentUid: 'preview',
           studentName: 'Admin CBT Preview',
-          startedAt: now,
+          startedAt: startedAtRef.current || now,
           submittedAt: now,
           status: 'SUBMITTED',
           answers,
@@ -254,7 +258,7 @@ export const CBTExamInterface: React.FC<CBTExamInterfaceProps> = ({
         studentName: resolvedName,
         rollNumber: directCandidate?.rollNumber || studentProfile?.rollNumber || '',
         classLevel: directCandidate?.classLevel || studentProfile?.classLevel || exam.classLevel,
-        startedAt: attemptRecord?.startedAt || now,
+        startedAt: attemptRecord?.startedAt || startedAtRef.current || now,
         resultsPublished: true,
         ...updatePayload,
       };
@@ -343,6 +347,7 @@ export const CBTExamInterface: React.FC<CBTExamInterfaceProps> = ({
 
     const now = new Date();
     const expires = new Date(now.getTime() + exam.durationMinutes * 60 * 1000);
+    startedAtRef.current = now.toISOString();
 
     if (isPreviewMode) {
       expiresAtRef.current = expires.getTime();
@@ -565,116 +570,16 @@ export const CBTExamInterface: React.FC<CBTExamInterfaceProps> = ({
     );
   }
 
-  // Phase 3: Submitted Scorecard
+  // Phase 3: Submitted Scorecard with Confetti Celebration
   if (phase === 'submitted' && attemptRecord) {
     return (
-      <div className="min-h-screen bg-[#F8FAFC] p-4 sm:p-8">
-        <div className="max-w-4xl mx-auto space-y-6">
-          <div className="bg-white border border-[#E2E8F0] rounded-xl p-6 flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <span className="text-xs font-mono text-emerald-700 font-semibold">EXAMINATION SUBMITTED</span>
-              <h1 className="font-display text-2xl font-bold text-[#0F172A] mt-0.5">{exam.title}</h1>
-              <p className="text-xs font-mono text-slate-500 mt-1">
-                Candidate: {attemptRecord.studentName} · Submitted:{' '}
-                {(attemptRecord.submittedAt || '').slice(0, 19).replace('T', ' ')}
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 print:hidden">
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="px-4 py-2 text-xs font-semibold border border-[#E2E8F0] bg-white text-[#0F172A] rounded-lg hover:bg-slate-50"
-              >
-                Download / Print Scorecard &amp; Solutions
-              </button>
-              <button
-                type="button"
-                onClick={onExit}
-                className="px-4 py-2 text-xs font-semibold bg-[#0032A0] text-white rounded-lg hover:bg-[#00257a]"
-              >
-                Return to Portal
-              </button>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="bg-white border border-[#E2E8F0] rounded-xl p-4">
-              <p className="text-xs text-slate-500">Score Obtained</p>
-              <p className="font-mono text-2xl font-bold text-[#0032A0] tabular-nums mt-1">
-                {attemptRecord.finalScore ?? attemptRecord.autoScore ?? 0} / {attemptRecord.totalMarks}
-              </p>
-            </div>
-            <div className="bg-white border border-[#E2E8F0] rounded-xl p-4">
-              <p className="text-xs text-slate-500">Percentage</p>
-              <p className="font-mono text-2xl font-bold text-[#0F172A] tabular-nums mt-1">
-                {attemptRecord.percentage ?? 0}%
-              </p>
-            </div>
-            <div className="bg-white border border-[#E2E8F0] rounded-xl p-4">
-              <p className="text-xs text-slate-500">Accuracy</p>
-              <p className="font-mono text-2xl font-bold text-emerald-700 tabular-nums mt-1">
-                {attemptRecord.accuracy ?? 0}%
-              </p>
-            </div>
-            <div className="bg-white border border-[#E2E8F0] rounded-xl p-4">
-              <p className="text-xs text-slate-500">Breakdown (C / I / U)</p>
-              <p className="font-mono text-lg font-bold text-[#0F172A] tabular-nums mt-1">
-                {attemptRecord.correctCount ?? 0} / {attemptRecord.incorrectCount ?? 0} /{' '}
-                {attemptRecord.unattemptedCount ?? 0}
-              </p>
-            </div>
-          </div>
-
-          {/* Question-by-Question Review */}
-          <div className="bg-white border border-[#E2E8F0] rounded-xl p-6 space-y-4">
-            <h2 className="font-display font-bold text-lg text-[#0F172A]">Answer Key &amp; Response Analysis</h2>
-            <div className="space-y-3">
-              {(attemptRecord.questionResults || []).map((res, idx) => {
-                const matchedQ = questions.find((q) => q.id === res.questionId);
-                return (
-                <div key={res.questionId} className="border border-[#E2E8F0] rounded-lg p-4 space-y-2">
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
-                    <span className="font-bold text-[#0032A0]">Question {idx + 1}</span>
-                    <span
-                      className={`font-semibold ${
-                        res.status === 'CORRECT'
-                          ? 'text-emerald-700'
-                          : res.status === 'INCORRECT'
-                          ? 'text-red-600'
-                          : 'text-slate-500'
-                      }`}
-                    >
-                      {res.status} ({res.marksAwarded > 0 ? `+${res.marksAwarded}` : res.marksAwarded} / {res.maxMarks})
-                    </span>
-                  </div>
-                  {res.questionText && (
-                    <div className="text-sm text-slate-800">
-                      <MathText text={res.questionText} />
-                    </div>
-                  )}
-                  {matchedQ?.questionImageUrl && (
-                    <img
-                      src={matchedQ.questionImageUrl}
-                      alt={`Question ${idx + 1}`}
-                      referrerPolicy="no-referrer"
-                      className="max-h-52 rounded-lg border border-[#E2E8F0] object-contain bg-white"
-                    />
-                  )}
-                  <div className="flex flex-wrap gap-4 text-xs font-mono pt-1">
-                    <span>
-                      Your Answer: <strong className="text-[#0F172A]">{res.candidateAnswer || 'Not Attempted'}</strong>
-                    </span>
-                    <span>
-                      Official Answer: <strong className="text-emerald-700">{res.officialAnswer}</strong>
-                    </span>
-                  </div>
-                </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      </div>
+      <ExamScorecardView
+        exam={exam}
+        questions={questions}
+        attemptRecord={attemptRecord}
+        instituteName={instituteName || tenantContext?.instituteName}
+        onExit={onExit}
+      />
     );
   }
 
