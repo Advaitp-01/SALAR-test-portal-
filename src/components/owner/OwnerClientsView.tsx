@@ -5,6 +5,7 @@ import {
   Building2,
   CalendarPlus,
   Check,
+  Cloud,
   Copy,
   Database,
   Download,
@@ -20,6 +21,7 @@ import {
   Send,
   Share2,
   Trash2,
+  Upload,
   X,
 } from 'lucide-react';
 import { salarApi } from '../../lib/salarApi';
@@ -326,8 +328,122 @@ export const OwnerClientsView: React.FC<OwnerClientsViewProps> = ({
     }
   };
 
+  const persistence = data.persistenceStatus || data.infrastructure.persistenceStatus;
+
+  const handleExportSnapshot = async () => {
+    setError('');
+    setMessage('');
+    setSaving(true);
+    try {
+      const bundle = await salarApi.exportPersistenceSnapshot();
+      const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `salar-platform-snapshot-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setMessage('Downloaded portable SALAR platform snapshot (.json) containing all registered clients, licenses, and tenant portals.');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to export platform snapshot.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleImportSnapshot = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setError('');
+    setMessage('');
+    setSaving(true);
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text) as Record<string, unknown>;
+      const res = await salarApi.importPersistenceSnapshot(parsed);
+      setMessage(
+        `Restored ${res.organizationsCount} client organization(s) and ${res.tenantsCount} tenant store(s) from snapshot.`
+      );
+      await onRefresh();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Invalid or corrupted platform snapshot file.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-5">
+      {persistence && !persistence.persistent && (
+        <div className="p-4 rounded-xl bg-amber-50 border border-amber-300 text-amber-950 space-y-2.5">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+              <div className="text-xs leading-relaxed">
+                <p className="font-bold text-amber-950">
+                  Ephemeral Vercel Storage Active (/tmp) — Connect Cloud KV or Blob for Permanent Client Persistence
+                </p>
+                <p className="mt-0.5 text-amber-900">
+                  Registered clients live in temporary serverless memory until you attach a persistent store. Add{' '}
+                  <span className="font-mono font-semibold">UPSTASH_REDIS_REST_URL</span> +{' '}
+                  <span className="font-mono font-semibold">UPSTASH_REDIS_REST_TOKEN</span> (or{' '}
+                  <span className="font-mono font-semibold">KV_REST_API_URL</span> +{' '}
+                  <span className="font-mono font-semibold">KV_REST_API_TOKEN</span>, or{' '}
+                  <span className="font-mono font-semibold">BLOB_READ_WRITE_TOKEN</span>) in Vercel Project Settings &gt; Environment Variables and redeploy so registered clients never vanish on refresh.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <button
+                type="button"
+                disabled={saving}
+                onClick={handleExportSnapshot}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-amber-300 rounded-lg text-xs font-semibold text-amber-900 hover:bg-amber-100"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Download Snapshot
+              </button>
+              <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-900 text-white rounded-lg text-xs font-semibold hover:bg-amber-950 cursor-pointer">
+                <Upload className="w-3.5 h-3.5" />
+                Restore Snapshot
+                <input type="file" accept="application/json,.json" onChange={handleImportSnapshot} className="hidden" />
+              </label>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {persistence && persistence.persistent && persistence.isVercel && (
+        <div className="px-4 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-2">
+            <Cloud className="w-4 h-4 text-emerald-700 shrink-0" />
+            <span>
+              <span className="font-semibold">Cloud Persistence Active:</span> {persistence.providerLabel}
+              {persistence.lastSyncedAt ? ` · Synced ${new Date(persistence.lastSyncedAt).toLocaleTimeString()}` : ''}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={saving}
+              onClick={handleExportSnapshot}
+              className="inline-flex items-center gap-1 px-2.5 py-1 bg-white border border-emerald-300 rounded font-semibold text-emerald-800 hover:bg-emerald-100"
+            >
+              <Download className="w-3 h-3" />
+              Export Snapshot
+            </button>
+            <label className="inline-flex items-center gap-1 px-2.5 py-1 bg-white border border-emerald-300 rounded font-semibold text-emerald-800 hover:bg-emerald-100 cursor-pointer">
+              <Upload className="w-3 h-3" />
+              Restore Snapshot
+              <input type="file" accept="application/json,.json" onChange={handleImportSnapshot} className="hidden" />
+            </label>
+          </div>
+        </div>
+      )}
+
       {message && (
         <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex flex-wrap items-center justify-between gap-2">
           <span>{message}</span>

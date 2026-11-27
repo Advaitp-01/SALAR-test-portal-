@@ -104,6 +104,7 @@ async function apiRequest<T>(url: string, options: RequestInit = {}): Promise<T>
 
   const res = await fetch(url, {
     ...options,
+    cache: 'no-store',
     credentials: 'include',
     headers,
   });
@@ -564,6 +565,27 @@ export const salarApi = {
     apiRequest<{ systemSettings: SystemSettings }>('/api/owner/settings', {
       method: 'PATCH',
       body: JSON.stringify(payload),
+    }),
+
+  exportPersistenceSnapshot: () =>
+    apiRequest<{
+      format: 'SALAR-PLATFORM-SNAPSHOT-V1';
+      exportedAt: string;
+      keys?: string;
+      saasDb: string;
+      adminGate?: string;
+      tenants: Record<string, string>;
+    }>('/api/owner/persistence/export'),
+
+  importPersistenceSnapshot: (bundle: Record<string, unknown>) =>
+    apiRequest<{
+      ok: boolean;
+      organizationsCount: number;
+      tenantsCount: number;
+      persistenceStatus: import('../types/salar').CloudPersistenceStatus;
+    }>('/api/owner/persistence/import', {
+      method: 'POST',
+      body: JSON.stringify(bundle),
     }),
 
   // Per-Tenant Isolated Auth API (for secondary client portals)

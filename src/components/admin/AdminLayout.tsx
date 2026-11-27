@@ -1,12 +1,16 @@
 import React, { useState } from 'react';
 import {
+  AlertTriangle,
   Award,
   Bell,
   BookOpen,
   CalendarCheck,
+  Check,
   ClipboardCheck,
+  Copy,
   CreditCard,
   Database,
+  ExternalLink,
   FileSpreadsheet,
   FileText,
   GraduationCap,
@@ -19,6 +23,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
+import { firebaseProjectId } from '../../lib/firebase';
 import { useAuth } from '../../context/AuthContext';
 import type { AdminModule } from '../../types/portal';
 
@@ -47,9 +52,52 @@ const SIDEBAR_ITEMS: Array<{ id: AdminModule; label: string; icon: React.Compone
 ];
 
 export const AdminLayout: React.FC<AdminLayoutProps> = ({ activeModule, onSelectModule, children }) => {
-  const { settings, tenantContext, firebaseUser, isIsolatedTenant, signInWithGoogle, logout } = useAuth();
+  const {
+    settings,
+    tenantContext,
+    firebaseUser,
+    isIsolatedTenant,
+    cloudAuthNeeded,
+    cloudLinkError,
+    clearCloudLinkError,
+    signInWithGoogle,
+    signInWithGoogleRedirectFallback,
+    logout,
+  } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [linkingCloud, setLinkingCloud] = useState(false);
+  const [localCloudError, setLocalCloudError] = useState('');
+  const [copiedDomain, setCopiedDomain] = useState(false);
   const instituteInitial = (settings.instituteName.trim().charAt(0) || 'S').toUpperCase();
+  const activeCloudError = localCloudError || cloudLinkError;
+  const currentHost = typeof window !== 'undefined' ? window.location.hostname : '';
+  const isUnauthorizedDomain =
+    activeCloudError.includes('unauthorized-domain') || activeCloudError.includes('Authorized domains');
+  const isPopupBlocked =
+    activeCloudError.includes('popup-blocked') ||
+    activeCloudError.includes('Brave Shields') ||
+    activeCloudError.includes('Redirect Sign-In');
+
+  const handleLinkCloudAccount = async () => {
+    setLocalCloudError('');
+    clearCloudLinkError();
+    setLinkingCloud(true);
+    try {
+      const res = await signInWithGoogle('SUPER_ADMIN');
+      if (res.error) {
+        setLocalCloudError(res.error);
+      }
+    } finally {
+      setLinkingCloud(false);
+    }
+  };
+
+  const handleCopyHost = () => {
+    if (!currentHost) return;
+    navigator.clipboard.writeText(currentHost).catch(() => {});
+    setCopiedDomain(true);
+    setTimeout(() => setCopiedDomain(false), 2000);
+  };
 
   const navContent = (
     <div className="flex flex-col h-full bg-white border-r border-[#E2E8F0]">
@@ -166,19 +214,69 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ activeModule, onSelect
           </button>
         </header>
 
-        {/* Optional one-time cloud link if authenticated only via server passcode on primary root portal */}
+        {/* Optional / Required one-time cloud link if authenticated only via server passcode on primary root portal */}
         {!firebaseUser && !isIsolatedTenant && (
-          <div className="bg-slate-50 border-b border-[#E2E8F0] px-4 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-3">
-            <p className="text-xs text-slate-600">
-              Admin session auto-saved. Link your verified admin account (<span className="font-mono">gurukulclassestech@gmail.com</span>) once if Firestore sync prompts for cloud authorization.
-            </p>
-            <button
-              type="button"
-              onClick={() => signInWithGoogle('SUPER_ADMIN')}
-              className="px-3 py-1.5 text-xs font-semibold text-[#0032A0] bg-white border border-[#E2E8F0] hover:bg-blue-50 rounded-lg whitespace-nowrap"
-            >
-              Link Cloud Account (One-Time)
-            </button>
+          <div className="bg-amber-50/80 border-b border-amber-200 px-4 sm:px-6 py-2.5 space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-start gap-2 text-xs text-slate-700">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <p>
+                  {cloudAuthNeeded
+                    ? 'Cloud Firestore requires Google authorization to sync Students, Exams, Attempts, and Payments. '
+                    : 'Passcode session active. '}
+                  Link your authorized admin account (<span className="font-mono font-semibold">gurukulclassestech@gmail.com</span> or{' '}
+                  <span className="font-mono font-semibold">advaitp38@gmail.com</span>) once for live cloud sync.
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={linkingCloud}
+                onClick={handleLinkCloudAccount}
+                className="px-3 py-1.5 text-xs font-semibold text-white bg-[#0032A0] hover:bg-[#00257a] disabled:opacity-60 rounded-lg whitespace-nowrap"
+              >
+                {linkingCloud ? 'Linking Cloud Account...' : 'Link Cloud Account (One-Time)'}
+              </button>
+            </div>
+
+            {activeCloudError && (
+              <div className="bg-red-50 border border-red-200 text-red-800 rounded-lg p-3 text-xs space-y-2">
+                <p className="font-medium leading-relaxed">{activeCloudError}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  {isUnauthorizedDomain && currentHost && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleCopyHost}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-white border border-red-300 rounded font-mono text-[11px] font-semibold text-red-900 hover:bg-red-100"
+                      >
+                        {copiedDomain ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                        {copiedDomain ? `Copied ${currentHost}` : `Copy Domain: ${currentHost}`}
+                      </button>
+                      {firebaseProjectId && (
+                        <a
+                          href={`https://console.firebase.google.com/project/${firebaseProjectId}/authentication/settings`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 bg-red-800 text-white rounded text-[11px] font-semibold hover:bg-red-900"
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                          Open Firebase Authorized Domains
+                        </a>
+                      )}
+                    </>
+                  )}
+                  {isPopupBlocked && (
+                    <button
+                      type="button"
+                      onClick={() => signInWithGoogleRedirectFallback('SUPER_ADMIN')}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-[#0032A0] text-white rounded text-[11px] font-semibold hover:bg-[#00257a]"
+                    >
+                      Use Redirect Sign-In (No Popup Needed)
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

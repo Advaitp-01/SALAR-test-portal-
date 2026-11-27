@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { hashPasswordScrypt, verifyPasswordScrypt } from './salarStore.ts';
 import { TENANTS_DIR } from './runtimePaths.ts';
+import { markCloudDeleteTenant, markCloudDirty } from './cloudPersistence.ts';
 import type { Organization } from './salarTypes.ts';
 
 fs.mkdirSync(TENANTS_DIR, { recursive: true });
@@ -75,8 +76,10 @@ export function deleteTenantStore(tenantId: string): boolean {
     const filePath = getTenantDbPath(tenantId);
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
+      markCloudDeleteTenant(tenantId);
       return true;
     }
+    markCloudDeleteTenant(tenantId);
     return false;
   } catch {
     return false;
@@ -579,6 +582,7 @@ export function writeTenantStore(tenantId: string, data: TenantRuntimeDatabase):
   const tempPath = `${filePath}.tmp.${process.pid}`;
   fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), 'utf-8');
   fs.renameSync(tempPath, filePath);
+  markCloudDirty('tenant', tenantId);
 }
 
 export function exportTenantRuntimeSnapshot(tenantId: string): TenantRuntimeDatabase | null {

@@ -1,15 +1,17 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import {
   User,
   createUserWithEmailAndPassword,
+  getRedirectResult,
   onAuthStateChanged,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signInWithPopup,
+  signInWithRedirect,
   signOut,
   updateProfile,
 } from 'firebase/auth';
-import { doc, getDoc, onSnapshot, setDoc } from '../lib/tenantDb';
+import { doc, getDoc, onSnapshot, setDoc, subscribeCloudAuthNeeded } from '../lib/tenantDb';
 import { DEFAULT_ROOT_ORG_ID, setActiveTenantOrgId } from '../lib/tenantDb';
 import { auth, db, googleAuthProvider, isAuthorizedAdminEmail, testFirestoreConnection } from '../lib/firebase';
 import { DEFAULT_INSTITUTE_SETTINGS } from '../lib/portalService';
@@ -17,11 +19,17 @@ import { salarApi } from '../lib/salarApi';
 import type { InstituteSettings, StudentProfile, UserRole } from '../types/portal';
 import type { TenantContextResponse } from '../types/salar';
 
+const ROOT_ADMIN_BEARER_KEY = 'salar_root_admin_bearer';
+const REDIRECT_ROLE_KEY = 'salar_google_redirect_role';
+
 interface AuthContextValue {
   firebaseUser: User | null;
   role: UserRole | null;
   adminGateToken: string | null;
   isAdminUnlocked: boolean;
+  cloudAuthNeeded: boolean;
+  cloudLinkError: string;
+  clearCloudLinkError: () => void;
   studentProfile: StudentProfile | null;
   settings: InstituteSettings;
   tenantContext: TenantContextResponse | null;
@@ -31,6 +39,7 @@ interface AuthContextValue {
   syncStatus: 'SYNCED' | 'SYNCING' | 'OFFLINE';
   lastSyncedAt: Date;
   signInWithGoogle: (intendedRole: UserRole) => Promise<{ role: UserRole; error?: string }>;
+  signInWithGoogleRedirectFallback: (intendedRole: UserRole) => Promise<void>;
   signInStudentEmail: (email: string, password: string) => Promise<{ error?: string }>;
   registerStudentEmail: (params: {
     name: string;
@@ -136,8 +145,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
   const [firebaseAuthChecked, setFirebaseAuthChecked] = useState(false);
   const [adminSessionChecked, setAdminSessionChecked] = useState(false);
+  const [cloudAuthNeeded, setCloudAuthNeeded] = useState(false);
+  const [cloudLinkError, setCloudLinkError] = useState('');
   const [syncStatus, setSyncStatus] = useState<'SYNCED' | 'SYNCING' | 'OFFLINE'>('SYNCING');
   const [lastSyncedAt, setLastSyncedAt] = useState<Date>(new Date());
+
+  const activeOrgRef = useRef<string | null>(null);
+  const redirectCheckedRef = useRef(false);
 
   const activeOrgId = tenantContext?.organizationId || DEFAULT_ROOT_ORG_ID;
   const isIsolatedTenant = Boolean(
@@ -159,6 +173,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
+  // Listen for Firestore permission-denied events while passcode-unlocked
+  useEffect(() => {
+    return subscribeCloudAuthNeeded(() => {
+      if (!isIsolatedTenant && !auth.currentUser) {
+        setCloudAuthNeeded(true);
+      }
+    });
+  }, [isIsolatedTenant]);
+
   // Resolve active Tenant Organization before initializing auth or DB subscriptions
   useEffect(() => {
     let active = true;
@@ -171,15 +194,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
-    setTenantResolved(false);
-    setAdminSessionChecked(false);
-    setFirebaseAuthChecked(false);
+    if (activeOrgRef.current === null) {
+      setTenantResolved(false);
+      setAdminSessionChecked(false);
+      setFirebaseAuthChecked(false);
+    }
 
     salarApi
       .getTenantContext()
       .then((ctx) => {
         if (!active) return;
         if (!ctx || !ctx.found) {
+          activeOrgRef.current = DEFAULT_ROOT_ORG_ID;
           setActiveTenantOrgId(DEFAULT_ROOT_ORG_ID);
           setTenantContext(null);
           setTenantNotFound(true);
@@ -191,15 +217,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           window.dispatchEvent(new Event('salar-route-change'));
         }
         const orgId = ctx.organizationId || DEFAULT_ROOT_ORG_ID;
+        const orgChanged = activeOrgRef.current !== null && activeOrgRef.current !== orgId;
+        activeOrgRef.current = orgId;
         setActiveTenantOrgId(orgId);
         setTenantContext(ctx);
         setTenantNotFound(false);
         setSettings(makeTenantFallbackSettings(ctx));
-        // Clear any cross-tenant in-memory state when switching orgs
-        setAdminGateToken(null);
-        setStudentProfile(null);
-        setFirebaseUser(null);
-        setRole(null);
+        if (orgChanged) {
+          // Clear any cross-tenant in-memory state ONLY when switching organizations
+          setAdminSessionChecked(false);
+          setFirebaseAuthChecked(false);
+          setAdminGateToken(null);
+          setStudentProfile(null);
+          setFirebaseUser(null);
+          setRole(null);
+          setCloudAuthNeeded(false);
+          setCloudLinkError('');
+        }
         setTenantResolved(true);
       })
       .catch(() => {
@@ -223,9 +257,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!tenantResolved) return;
     let active = true;
 
+    const storedRootBearer = (() => {
+      try {
+        return window.sessionStorage.getItem(ROOT_ADMIN_BEARER_KEY) || '';
+      } catch {
+        return '';
+      }
+    })();
+
     const checkSession = isIsolatedTenant
       ? salarApi.getTenantAdminSession(activeOrgId).catch(() => ({ authenticated: false as const }))
-      : fetch('/api/auth/admin/session', { credentials: 'include' })
+      : fetch('/api/auth/admin/session', {
+          credentials: 'include',
+          cache: 'no-store',
+          headers: storedRootBearer ? { Authorization: `Bearer ${storedRootBearer}` } : undefined,
+        })
           .then((r) => (r.ok ? r.json() : { authenticated: false }))
           .catch(() => ({ authenticated: false }));
 
@@ -233,8 +279,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       .then((data: { authenticated?: boolean; token?: string }) => {
         if (!active) return;
         if (data?.authenticated) {
-          setAdminGateToken(data.token || 'cookie-session');
+          setAdminGateToken(data.token || storedRootBearer || 'cookie-session');
           setRole('SUPER_ADMIN');
+        } else if (!isIsolatedTenant && storedRootBearer) {
+          try {
+            window.sessionStorage.removeItem(ROOT_ADMIN_BEARER_KEY);
+          } catch {
+            // ignore
+          }
         }
       })
       .finally(() => {
@@ -383,6 +435,52 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
     }
 
+    if (!redirectCheckedRef.current) {
+      redirectCheckedRef.current = true;
+      getRedirectResult(auth)
+        .then(async (cred) => {
+          let intendedRole: UserRole | null = null;
+          try {
+            intendedRole = window.sessionStorage.getItem(REDIRECT_ROLE_KEY) as UserRole | null;
+            window.sessionStorage.removeItem(REDIRECT_ROLE_KEY);
+          } catch {
+            // ignore
+          }
+          if (!cred?.user) return;
+          const user = cred.user;
+          const isPrimary = user.emailVerified && isAuthorizedAdminEmail(user.email);
+          let isAdminDoc = false;
+          if (!isPrimary) {
+            try {
+              const adminSnap = await getDoc(doc(db, 'admins', user.uid));
+              isAdminDoc = adminSnap.exists();
+            } catch {
+              isAdminDoc = false;
+            }
+          }
+          if (intendedRole === 'SUPER_ADMIN' && !isPrimary && !isAdminDoc) {
+            await signOut(auth);
+            setCloudLinkError(
+              `Account ${user.email} does not hold Super Admin authorization. Sign in with gurukulclassestech@gmail.com or advaitp38@gmail.com.`
+            );
+            return;
+          }
+          if (isPrimary || isAdminDoc) {
+            setRole('SUPER_ADMIN');
+            setCloudAuthNeeded(false);
+            setCloudLinkError('');
+          }
+        })
+        .catch((err) => {
+          try {
+            window.sessionStorage.removeItem(REDIRECT_ROLE_KEY);
+          } catch {
+            // ignore
+          }
+          setCloudLinkError(mapFirebaseAuthError(err));
+        });
+    }
+
     const unsub = onAuthStateChanged(auth, async (user) => {
       setFirebaseUser(user);
       if (!user) {
@@ -408,6 +506,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (isPrimary || isAdminDoc) {
           setRole('SUPER_ADMIN');
+          setCloudAuthNeeded(false);
+          setCloudLinkError('');
         } else if (!adminGateToken) {
           setRole('STUDENT');
           await syncStudentDoc(user);
@@ -421,6 +521,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsub();
   }, [tenantResolved, isIsolatedTenant, activeOrgId, adminGateToken]);
 
+  const mapFirebaseAuthError = (err: unknown): string => {
+    const code = err && typeof err === 'object' && 'code' in err ? String((err as { code?: string }).code || '') : '';
+    const msg = err instanceof Error ? err.message : String(err);
+    const host = typeof window !== 'undefined' ? window.location.hostname : 'this domain';
+
+    if (code === 'auth/unauthorized-domain' || msg.includes('auth/unauthorized-domain')) {
+      return `Firebase Unauthorized Domain (auth/unauthorized-domain): "${host}" must be added in Firebase Console > Authentication > Settings > Authorized domains.`;
+    }
+    if (code === 'auth/popup-blocked' || msg.includes('auth/popup-blocked')) {
+      return 'Browser popup was blocked (Brave Shields or popup blocker). Allow popups for this site or click "Use Redirect Sign-In" below.';
+    }
+    if (code === 'auth/popup-closed-by-user' || msg.includes('auth/popup-closed-by-user')) {
+      return 'Google Sign-In popup was closed before completing login. Please try again.';
+    }
+    if (code === 'auth/cancelled-popup-request' || msg.includes('auth/cancelled-popup-request')) {
+      return 'Another Google Sign-In popup was already pending. Please try again.';
+    }
+    if (code === 'auth/network-request-failed' || msg.includes('auth/network-request-failed')) {
+      return 'Network request to Google/Firebase failed. Disable strict Brave Shields on this site or check your internet connection.';
+    }
+    if (msg.includes('auth/operation-not-allowed')) {
+      return 'Email/Password sign-in is not yet enabled in Firebase Console (Authentication > Sign-in method > Email/Password). Please use Google Sign-In or enable Email/Password in Firebase Console.';
+    }
+    if (msg.includes('auth/invalid-credential') || msg.includes('auth/wrong-password')) {
+      return 'Invalid email or password. Please verify your credentials.';
+    }
+    if (msg.includes('auth/email-already-in-use')) {
+      return 'An account with this email already exists. Please log in instead.';
+    }
+    if (msg.includes('auth/weak-password')) {
+      return 'Password must be at least 6 characters long.';
+    }
+    return msg;
+  };
+
   const signInWithGoogle = async (intendedRole: UserRole): Promise<{ role: UserRole; error?: string }> => {
     if (isIsolatedTenant) {
       return {
@@ -428,6 +563,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         error: 'Google Sign-In is disabled on isolated client portals. Please use your portal email & password.',
       };
     }
+    setCloudLinkError('');
     try {
       const cred = await signInWithPopup(auth, googleAuthProvider);
       const user = cred.user;
@@ -445,17 +581,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (intendedRole === 'SUPER_ADMIN') {
         if (!isPrimary && !isAdminDoc) {
           await signOut(auth);
+          const errMsg = `Account ${user.email} does not hold Super Admin authorization. Please sign in with gurukulclassestech@gmail.com or advaitp38@gmail.com.`;
+          setCloudLinkError(errMsg);
           return {
             role: 'STUDENT',
-            error: `Account ${user.email} does not hold Super Admin authorization. Only authorized institute administrators can unlock the Admin Console via Google Sign-In.`,
+            error: errMsg,
           };
         }
         setRole('SUPER_ADMIN');
+        setCloudAuthNeeded(false);
+        setCloudLinkError('');
         return { role: 'SUPER_ADMIN' };
       }
 
       if (isPrimary || isAdminDoc) {
         setRole('SUPER_ADMIN');
+        setCloudAuthNeeded(false);
+        setCloudLinkError('');
         return { role: 'SUPER_ADMIN' };
       }
 
@@ -463,26 +605,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await syncStudentDoc(user);
       return { role: 'STUDENT' };
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Google Sign-In failed.';
-      return { role: 'STUDENT', error: msg };
+      const mapped = mapFirebaseAuthError(err);
+      if (intendedRole === 'SUPER_ADMIN') {
+        setCloudLinkError(mapped);
+      }
+      return { role: 'STUDENT', error: mapped };
     }
   };
 
-  const mapFirebaseAuthError = (err: unknown): string => {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes('auth/operation-not-allowed')) {
-      return 'Email/Password sign-in is not yet enabled in Firebase Console (Authentication > Sign-in method > Email/Password). Please use Google Sign-In or enable Email/Password in Firebase Console.';
+  const signInWithGoogleRedirectFallback = async (intendedRole: UserRole): Promise<void> => {
+    if (isIsolatedTenant) return;
+    setCloudLinkError('');
+    try {
+      window.sessionStorage.setItem(REDIRECT_ROLE_KEY, intendedRole);
+    } catch {
+      // ignore
     }
-    if (msg.includes('auth/invalid-credential') || msg.includes('auth/wrong-password')) {
-      return 'Invalid email or password. Please verify your credentials.';
+    try {
+      await signInWithRedirect(auth, googleAuthProvider);
+    } catch (err: unknown) {
+      setCloudLinkError(mapFirebaseAuthError(err));
     }
-    if (msg.includes('auth/email-already-in-use')) {
-      return 'An account with this email already exists. Please log in instead.';
-    }
-    if (msg.includes('auth/weak-password')) {
-      return 'Password must be at least 6 characters long.';
-    }
-    return msg;
   };
 
   const signInStudentEmail = async (email: string, password: string) => {
@@ -587,6 +730,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const unlockAdminWithToken = (token: string) => {
+    if (!isIsolatedTenant && token && token !== 'cookie-session') {
+      try {
+        window.sessionStorage.setItem(ROOT_ADMIN_BEARER_KEY, token);
+      } catch {
+        // ignore
+      }
+    }
     setAdminGateToken(token);
     setRole('SUPER_ADMIN');
   };
@@ -595,6 +745,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setAdminGateToken(null);
     setStudentProfile(null);
     setRole(null);
+    setCloudAuthNeeded(false);
+    setCloudLinkError('');
+    try {
+      window.sessionStorage.removeItem(ROOT_ADMIN_BEARER_KEY);
+    } catch {
+      // ignore
+    }
     if (isIsolatedTenant) {
       setFirebaseUser(null);
       try {
@@ -649,6 +806,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         role,
         adminGateToken,
         isAdminUnlocked,
+        cloudAuthNeeded,
+        cloudLinkError,
+        clearCloudLinkError: () => setCloudLinkError(''),
         studentProfile,
         settings,
         tenantContext,
@@ -658,6 +818,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         syncStatus,
         lastSyncedAt,
         signInWithGoogle,
+        signInWithGoogleRedirectFallback,
         signInStudentEmail,
         registerStudentEmail,
         resetPassword,

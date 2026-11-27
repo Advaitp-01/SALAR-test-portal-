@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Activity, Cpu, Database, HardDrive, Network, RefreshCw, Save, Server } from 'lucide-react';
+import { Activity, Cloud, Cpu, Database, Download, HardDrive, Network, RefreshCw, Save, Server, Upload } from 'lucide-react';
 import { salarApi } from '../../lib/salarApi';
 import type { InfrastructureSnapshot, OwnerBootstrapData, ScalingPolicy } from '../../types/salar';
 
@@ -59,6 +59,44 @@ export const OwnerInfrastructureView: React.FC<OwnerInfrastructureViewProps> = (
     try {
       const res = await salarApi.probeDatabase();
       setProbeResult(res);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleExportBundle = async () => {
+    setBusy(true);
+    setMsg('');
+    try {
+      const bundle = await salarApi.exportPersistenceSnapshot();
+      const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `salar-platform-snapshot-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setMsg('Exported portable platform JSON snapshot.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleImportBundle = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setBusy(true);
+    setMsg('');
+    try {
+      const parsed = JSON.parse(await file.text()) as Record<string, unknown>;
+      const res = await salarApi.importPersistenceSnapshot(parsed);
+      setMsg(`Restored ${res.organizationsCount} client organization(s) and ${res.tenantsCount} tenant store(s).`);
+      await onRefresh();
+    } catch (err: unknown) {
+      setMsg(err instanceof Error ? err.message : 'Failed to restore snapshot.');
     } finally {
       setBusy(false);
     }
@@ -161,6 +199,48 @@ export const OwnerInfrastructureView: React.FC<OwnerInfrastructureViewProps> = (
               </p>
             </div>
           </div>
+
+          {liveInfra.persistenceStatus && (
+            <div
+              className={`mt-4 p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                liveInfra.persistenceStatus.persistent
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-950'
+                  : 'bg-amber-50 border-amber-300 text-amber-950'
+              }`}
+            >
+              <div className="flex items-start gap-2.5 text-xs">
+                <Cloud className="w-4 h-4 mt-0.5 shrink-0" />
+                <div>
+                  <p className="font-bold">
+                    Platform Registry Persistence: {liveInfra.persistenceStatus.mode}
+                  </p>
+                  <p className="mt-0.5">{liveInfra.persistenceStatus.providerLabel}</p>
+                  {liveInfra.persistenceStatus.lastError && (
+                    <p className="mt-0.5 text-red-700 font-mono">Error: {liveInfra.persistenceStatus.lastError}</p>
+                  )}
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={handleExportBundle}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 hover:bg-slate-50"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Export Snapshot
+                </button>
+                <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#0032A0] text-white rounded-lg text-xs font-semibold hover:bg-[#00257a] cursor-pointer">
+                  <Upload className="w-3.5 h-3.5" />
+                  Restore Snapshot
+                  <input type="file" accept="application/json,.json" onChange={handleImportBundle} className="hidden" />
+                </label>
+              </div>
+            </div>
+          )}
+          {msg && (
+            <div className="mt-3 p-3 rounded-lg bg-blue-50 border border-blue-200 text-xs text-[#0032A0]">{msg}</div>
+          )}
         </div>
       </div>
     );

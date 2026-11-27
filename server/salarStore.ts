@@ -17,6 +17,7 @@ import type {
 } from './salarTypes.ts';
 
 import { BACKUPS_DIR, DATA_DIR, UPLOADS_DIR } from './runtimePaths.ts';
+import { markCloudDirty, registerKeysReloadHook } from './cloudPersistence.ts';
 
 const DB_FILE = path.join(DATA_DIR, 'salar-saas-db.json');
 const KEYS_FILE = path.join(DATA_DIR, 'salar-keys.json');
@@ -32,11 +33,10 @@ interface ServerKeyStore {
 }
 
 function getVercelDeploymentSeed(): string {
-  const vercelMarkers = [
+  const stableVercelMarkers = [
     process.env.VERCEL_PROJECT_ID,
     process.env.VERCEL_ORG_ID,
     process.env.VERCEL_PROJECT_PRODUCTION_URL,
-    process.env.VERCEL_URL,
     process.env.VERCEL_GIT_REPO_ID,
   ]
     .filter((v): v is string => Boolean(v && v.trim()))
@@ -51,7 +51,8 @@ function getVercelDeploymentSeed(): string {
   } catch {
     // ignore
   }
-  return `${vercelMarkers}|${firebaseSeed}`;
+  const combined = [stableVercelMarkers, firebaseSeed].filter(Boolean).join('|');
+  return combined || process.env.VERCEL_URL || '';
 }
 
 function loadOrCreateServerKeys(): ServerKeyStore {
@@ -102,6 +103,26 @@ function loadOrCreateServerKeys(): ServerKeyStore {
 }
 
 export const SERVER_KEYS = loadOrCreateServerKeys();
+
+export function reloadServerKeysFromDisk(): void {
+  try {
+    if (!fs.existsSync(KEYS_FILE)) return;
+    const parsed = JSON.parse(fs.readFileSync(KEYS_FILE, 'utf-8')) as Partial<ServerKeyStore>;
+    if (!process.env.LICENSE_HMAC_SECRET?.trim() && parsed.licenseHmacSecret) {
+      SERVER_KEYS.licenseHmacSecret = parsed.licenseHmacSecret;
+    }
+    if (!process.env.BACKUP_ENCRYPTION_KEY?.trim() && parsed.backupEncryptionKeyHex) {
+      SERVER_KEYS.backupEncryptionKeyHex = parsed.backupEncryptionKeyHex;
+    }
+    if (!process.env.SESSION_SECRET?.trim() && parsed.sessionSecret) {
+      SERVER_KEYS.sessionSecret = parsed.sessionSecret;
+    }
+  } catch {
+    // ignore invalid disk read
+  }
+}
+
+registerKeysReloadHook(reloadServerKeysFromDisk);
 
 export function hashPasswordScrypt(password: string, saltHex?: string): { salt: string; hash: string } {
   const salt = saltHex || crypto.randomBytes(16).toString('hex');
@@ -999,6 +1020,7 @@ export function writeSalarDb(data: SalarDatabaseSchema): void {
   const tempFile = `${DB_FILE}.tmp.${process.pid}`;
   fs.writeFileSync(tempFile, JSON.stringify(data, null, 2), 'utf-8');
   fs.renameSync(tempFile, DB_FILE);
+  markCloudDirty('saas_db');
 }
 
 export function appendAuditLog(

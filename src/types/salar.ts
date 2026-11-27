@@ -516,6 +516,16 @@ export interface InfrastructureSnapshot {
     smtpConfigured: boolean;
     firestoreProjectId: string;
   };
+  persistenceStatus?: CloudPersistenceStatus;
+}
+
+export interface CloudPersistenceStatus {
+  mode: 'UPSTASH_KV' | 'VERCEL_BLOB' | 'LOCAL_DISK' | 'EPHEMERAL_TMP';
+  persistent: boolean;
+  providerLabel: string;
+  isVercel: boolean;
+  lastSyncedAt: string | null;
+  lastError: string | null;
 }
 
 export interface OwnerBootstrapData {
@@ -558,6 +568,7 @@ export interface OwnerBootstrapData {
     exportArchiveName: string;
   }>;
   infrastructure: InfrastructureSnapshot;
+  persistenceStatus?: CloudPersistenceStatus;
   computedMetrics: {
     totalClients: number;
     activeClients: number;

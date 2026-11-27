@@ -28,8 +28,22 @@ import {
   type WhereFilterOp,
   type WriteBatch,
 } from 'firebase/firestore';
+import { auth } from './firebase';
 
 export const DEFAULT_ROOT_ORG_ID = 'SALAR-ORG-00001';
+
+const cloudAuthNeededListeners = new Set<(reason: string) => void>();
+
+export function subscribeCloudAuthNeeded(fn: (reason: string) => void): () => void {
+  cloudAuthNeededListeners.add(fn);
+  return () => {
+    cloudAuthNeededListeners.delete(fn);
+  };
+}
+
+export function notifyCloudAuthNeeded(reason: string): void {
+  cloudAuthNeededListeners.forEach((fn) => fn(reason));
+}
 
 let activeTenantOrgId: string = DEFAULT_ROOT_ORG_ID;
 
@@ -356,7 +370,21 @@ export function onSnapshot(
   onError?: (error: Error) => void
 ): () => void {
   if (!isTenantRef(target)) {
-    return fsOnSnapshot(target as any, onNext, onError as any);
+    const wrappedError = (err: Error & { code?: string }) => {
+      const code = String(err?.code || '');
+      const msg = String(err?.message || '');
+      if (
+        (code === 'permission-denied' || msg.includes('Missing or insufficient permissions')) &&
+        !auth.currentUser
+      ) {
+        notifyCloudAuthNeeded(msg || 'Cloud Firestore authorization required.');
+        return;
+      }
+      if (onError) {
+        onError(err);
+      }
+    };
+    return fsOnSnapshot(target as any, onNext, wrappedError as any);
   }
 
   let active = true;

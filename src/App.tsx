@@ -328,21 +328,23 @@ const PortalShell: React.FC = () => {
   if (role === 'SUPER_ADMIN' || isAdminUnlocked) {
     return (
       <AdminLayout activeModule={adminModule} onSelectModule={setAdminModule}>
-        {adminModule === 'dashboard' && <DashboardView onNavigate={setAdminModule} />}
-        {adminModule === 'students' && <StudentsView />}
-        {adminModule === 'faculty' && <FacultyView />}
-        {adminModule === 'batches' && <BatchesView />}
-        {adminModule === 'question-bank' && <QuestionBankView />}
-        {adminModule === 'exams' && <ExamsView />}
-        {adminModule === 'attendance' && <AttendanceView />}
-        {adminModule === 'study-material' && <StudyMaterialView />}
-        {adminModule === 'notifications' && <NotificationsView />}
-        {adminModule === 'results' && <ResultsView />}
-        {adminModule === 'evaluation' && <EvaluationView />}
-        {adminModule === 'payments' && <PaymentsView />}
-        {adminModule === 'courses' && <CoursesView />}
-        {adminModule === 'test-series' && <TestSeriesView />}
-        {adminModule === 'settings' && <SettingsView />}
+        <React.Fragment key={firebaseUser?.uid || 'passcode'}>
+          {adminModule === 'dashboard' && <DashboardView onNavigate={setAdminModule} />}
+          {adminModule === 'students' && <StudentsView />}
+          {adminModule === 'faculty' && <FacultyView />}
+          {adminModule === 'batches' && <BatchesView />}
+          {adminModule === 'question-bank' && <QuestionBankView />}
+          {adminModule === 'exams' && <ExamsView />}
+          {adminModule === 'attendance' && <AttendanceView />}
+          {adminModule === 'study-material' && <StudyMaterialView />}
+          {adminModule === 'notifications' && <NotificationsView />}
+          {adminModule === 'results' && <ResultsView />}
+          {adminModule === 'evaluation' && <EvaluationView />}
+          {adminModule === 'payments' && <PaymentsView />}
+          {adminModule === 'courses' && <CoursesView />}
+          {adminModule === 'test-series' && <TestSeriesView />}
+          {adminModule === 'settings' && <SettingsView />}
+        </React.Fragment>
       </AdminLayout>
     );
   }

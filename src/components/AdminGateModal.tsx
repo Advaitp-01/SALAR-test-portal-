@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Eye, EyeOff, Info, Lock, ShieldCheck, X } from 'lucide-react';
+import { Check, Copy, ExternalLink, Eye, EyeOff, Info, Lock, ShieldCheck, X } from 'lucide-react';
+import { firebaseProjectId } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import { salarApi } from '../lib/salarApi';
 
@@ -10,7 +11,7 @@ interface AdminGateModalProps {
 }
 
 export const AdminGateModal: React.FC<AdminGateModalProps> = ({ isOpen, onClose, onSuccess }) => {
-  const { signInWithGoogle, unlockAdminWithToken, isIsolatedTenant, tenantContext, settings } = useAuth();
+  const { signInWithGoogle, signInWithGoogleRedirectFallback, unlockAdminWithToken, isIsolatedTenant, tenantContext, settings } = useAuth();
   const [adminEmail, setAdminEmail] = useState('');
   const [passcode, setPasscode] = useState('');
   const [confirmPasscode, setConfirmPasscode] = useState('');
@@ -18,9 +19,13 @@ export const AdminGateModal: React.FC<AdminGateModalProps> = ({ isOpen, onClose,
   const [requiresClaim, setRequiresClaim] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [copiedDomain, setCopiedDomain] = useState(false);
 
   const tenantOrgId = tenantContext?.organizationId;
   const registeredAdminEmail = tenantContext?.email || settings.email || '';
+  const currentHost = typeof window !== 'undefined' ? window.location.hostname : '';
+  const isUnauthorizedDomain = error.includes('unauthorized-domain') || error.includes('Authorized domains');
+  const isPopupBlocked = error.includes('popup-blocked') || error.includes('Brave Shields') || error.includes('Redirect Sign-In');
 
   useEffect(() => {
     if (!isOpen) return;
@@ -164,8 +169,46 @@ export const AdminGateModal: React.FC<AdminGateModalProps> = ({ isOpen, onClose,
           </div>
 
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-xs leading-relaxed">
-              {error}
+            <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-xs leading-relaxed space-y-2">
+              <p>{error}</p>
+              <div className="flex flex-wrap items-center gap-2">
+                {isUnauthorizedDomain && currentHost && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(currentHost).catch(() => {});
+                        setCopiedDomain(true);
+                        setTimeout(() => setCopiedDomain(false), 2000);
+                      }}
+                      className="inline-flex items-center gap-1 px-2 py-1 bg-white border border-red-300 rounded font-mono text-[11px] font-semibold text-red-900"
+                    >
+                      {copiedDomain ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                      {copiedDomain ? 'Copied' : `Copy: ${currentHost}`}
+                    </button>
+                    {firebaseProjectId && (
+                      <a
+                        href={`https://console.firebase.google.com/project/${firebaseProjectId}/authentication/settings`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 px-2 py-1 bg-red-800 text-white rounded text-[11px] font-semibold"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        Authorized Domains
+                      </a>
+                    )}
+                  </>
+                )}
+                {isPopupBlocked && (
+                  <button
+                    type="button"
+                    onClick={() => signInWithGoogleRedirectFallback('SUPER_ADMIN')}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 bg-[#0032A0] text-white rounded text-[11px] font-semibold"
+                  >
+                    Use Redirect Sign-In
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
@@ -293,7 +336,7 @@ export const AdminGateModal: React.FC<AdminGateModalProps> = ({ isOpen, onClose,
                     d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.99 3.14c.95-2.85 3.6-4.96 6.72-4.96Z"
                   />
                 </svg>
-                Sign in with Google ({'gurukulclassestech@gmail.com'})
+                Sign in with Authorized Google Account
               </button>
             </>
           )}

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { collection, onSnapshot } from '../../lib/tenantDb';
 import {
   Activity,
+  AlertTriangle,
   ArrowRight,
   Award,
   BookOpen,
@@ -29,7 +30,8 @@ interface DashboardViewProps {
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
-  const { syncStatus, settings, tenantContext, isIsolatedTenant } = useAuth();
+  const { syncStatus, settings, tenantContext, isIsolatedTenant, firebaseUser, cloudAuthNeeded } = useAuth();
+  const needsCloudAuth = !isIsolatedTenant && (!firebaseUser || cloudAuthNeeded);
   const [students, setStudents] = useState<StudentProfile[]>([]);
   const [exams, setExams] = useState<Exam[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
@@ -203,8 +205,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
               {paused ? 'PAUSED' : 'LIVE'}
             </span>
             <span className="inline-flex items-center gap-1.5 text-xs font-mono text-slate-600">
-              <Database className="w-3.5 h-3.5 text-[#0032A0]" />
-              {syncStatus === 'SYNCED' ? 'Database synced' : 'Offline'}
+              <Database className={`w-3.5 h-3.5 ${needsCloudAuth ? 'text-amber-600' : 'text-[#0032A0]'}`} />
+              {needsCloudAuth ? 'Cloud Auth Required' : syncStatus === 'SYNCED' ? 'Database synced' : 'Offline'}
             </span>
           </div>
           <div className="mt-1.5 flex flex-wrap items-center gap-3 text-xs font-mono text-slate-500">
@@ -218,7 +220,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          {exams.length === 0 && courses.length === 0 && (
+          {exams.length === 0 && courses.length === 0 && !needsCloudAuth && (
             <button
               type="button"
               disabled={seeding}
@@ -247,6 +249,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
           </button>
         </div>
       </div>
+
+      {needsCloudAuth && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-950 rounded-xl p-4 flex items-start gap-3 text-xs leading-relaxed">
+          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold">Cloud Firestore Sync Waiting for Admin Google Authorization</p>
+            <p className="mt-0.5 text-amber-900">
+              Students, Exams, Attempts, and Revenue show <span className="font-mono font-semibold">0</span> because only public courses are readable under a passcode-only session. Click <span className="font-semibold">Link Cloud Account (One-Time)</span> in the top banner above and sign in with <span className="font-mono">gurukulclassestech@gmail.com</span> or <span className="font-mono">advaitp38@gmail.com</span> to unlock live data.
+            </p>
+          </div>
+        </div>
+      )}
 
       {seedMessage && (
         <div className="bg-blue-50 border border-blue-200 text-[#0032A0] rounded-lg px-4 py-2.5 text-xs font-medium">

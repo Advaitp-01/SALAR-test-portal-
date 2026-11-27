@@ -8,6 +8,7 @@ import { GoogleGenAI, Type } from '@google/genai';
 import { createSalarRouter, telemetryMiddleware } from './salarRouter.ts';
 import { SERVER_KEYS } from './salarStore.ts';
 import { ADMIN_CRED_FILE, ROOT_DIR, UPLOADS_DIR } from './runtimePaths.ts';
+import { cloudPersistenceMiddleware, markCloudDirty } from './cloudPersistence.ts';
 
 dotenv.config();
 
@@ -178,6 +179,7 @@ export function createApiApp(): Express {
   const app = express();
   app.set('trust proxy', 1);
   app.use(express.json({ limit: '25mb' }));
+  app.use('/api', cloudPersistenceMiddleware);
   app.use(telemetryMiddleware);
 
   // Admin Gate Auth Endpoints
@@ -236,6 +238,7 @@ export function createApiApp(): Express {
       claimedAt: new Date().toISOString(),
     };
     fs.writeFileSync(ADMIN_CRED_FILE, JSON.stringify(record, null, 2), 'utf-8');
+    markCloudDirty('admin_gate');
     const token = signSessionToken({
       role: 'SUPER_ADMIN',
       sub: 'admin-gate',

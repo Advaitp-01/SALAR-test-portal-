@@ -19,6 +19,7 @@ import {
   generateTotpSecret,
   hashPasswordScrypt,
   readSalarDb,
+  reloadServerKeysFromDisk,
   SERVER_KEYS,
   signLicensePayload,
   verifyAndReadBackupFile,
@@ -27,6 +28,11 @@ import {
   verifyTotpCode,
   writeSalarDb,
 } from './salarStore.ts';
+import {
+  applyFullPlatformBundle,
+  exportFullPlatformBundle,
+  getCloudPersistenceStatus,
+} from './cloudPersistence.ts';
 import {
   applyTenantPayloadPatch,
   authenticateTenantStudent,
@@ -213,6 +219,7 @@ function getRealInfrastructureSnapshot() {
         }
       })(),
     },
+    persistenceStatus: getCloudPersistenceStatus(),
   };
 }
 
@@ -1069,6 +1076,7 @@ export function createSalarRouter(): express.Router {
       portalBindings: buildPortalBindings(db),
       ownerProfile,
       infrastructure: infra,
+      persistenceStatus: infra.persistenceStatus,
       computedMetrics: {
         totalClients: db.organizations.length,
         activeClients: db.organizations.filter((o) => o.status === 'ACTIVE').length,
@@ -3675,6 +3683,84 @@ export function createSalarRouter(): express.Router {
     });
     writeSalarDb(db);
     res.json({ systemSettings: db.systemSettings });
+  });
+
+  router.get('/owner/persistence/export', requireOwnerAuth, (req: AuthenticatedOwnerRequest, res: Response) => {
+    const db = readSalarDb();
+    appendAuditLog(db, {
+      actor: req.ownerUsername || 'OWNER',
+      actorType: 'OWNER',
+      action: 'PLATFORM_SNAPSHOT_EXPORTED',
+      resourceType: 'PersistenceBundle',
+      resourceId: 'PLATFORM',
+      ip: getClientIp(req),
+      details: `Exported portable platform JSON snapshot (${db.organizations.length} clients).`,
+      status: 'SUCCESS',
+    });
+    writeSalarDb(db);
+    res.json(exportFullPlatformBundle());
+  });
+
+  router.post('/owner/persistence/import', requireOwnerAuth, (req: AuthenticatedOwnerRequest, res: Response) => {
+    const bundle = req.body as {
+      format?: string;
+      exportedAt?: string;
+      keys?: string;
+      saasDb?: string;
+      adminGate?: string;
+      tenants?: Record<string, string>;
+      overwriteKeys?: boolean;
+    };
+
+    if (!bundle || bundle.format !== 'SALAR-PLATFORM-SNAPSHOT-V1' || typeof bundle.saasDb !== 'string') {
+      res.status(400).json({ error: 'Invalid snapshot file. Expected SALAR-PLATFORM-SNAPSHOT-V1 JSON.' });
+      return;
+    }
+
+    try {
+      const parsedDb = JSON.parse(bundle.saasDb) as { organizations?: unknown[] };
+      if (!parsedDb || !Array.isArray(parsedDb.organizations)) {
+        res.status(400).json({ error: 'Snapshot saasDb is malformed or missing organizations list.' });
+        return;
+      }
+    } catch {
+      res.status(400).json({ error: 'Snapshot saasDb contains invalid JSON.' });
+      return;
+    }
+
+    applyFullPlatformBundle(
+      {
+        format: 'SALAR-PLATFORM-SNAPSHOT-V1',
+        exportedAt: String(bundle.exportedAt || new Date().toISOString()),
+        rev: typeof (bundle as { rev?: unknown }).rev === 'string' ? String((bundle as { rev?: unknown }).rev) : `${Date.now()}`,
+        keys: typeof bundle.keys === 'string' ? bundle.keys : null,
+        saasDb: bundle.saasDb,
+        adminGate: typeof bundle.adminGate === 'string' ? bundle.adminGate : null,
+        tenants: bundle.tenants && typeof bundle.tenants === 'object' ? bundle.tenants : {},
+      },
+      Boolean(bundle.overwriteKeys)
+    );
+    reloadServerKeysFromDisk();
+
+    const db = readSalarDb();
+    appendAuditLog(db, {
+      actor: req.ownerUsername || 'OWNER',
+      actorType: 'OWNER',
+      action: 'PLATFORM_SNAPSHOT_IMPORTED',
+      resourceType: 'PersistenceBundle',
+      resourceId: 'PLATFORM',
+      ip: getClientIp(req),
+      details: `Restored portable platform snapshot (${db.organizations.length} clients, ${db.tenants.length} tenants).`,
+      status: 'SUCCESS',
+    });
+    writeSalarDb(db);
+
+    res.json({
+      ok: true,
+      organizationsCount: db.organizations.length,
+      tenantsCount: db.tenants.length,
+      persistenceStatus: getCloudPersistenceStatus(),
+    });
   });
 
   // =========================================================================
