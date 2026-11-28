@@ -373,7 +373,7 @@ export const StudentDashboardView: React.FC<StudentDashboardViewProps> = ({ onNa
                     </p>
                     <p className="text-xs font-bold text-[#0F172A] truncate">{m.title}</p>
                     <p className="text-[11px] font-mono text-slate-400">
-                      {m.chapter || 'Mathematics'} · {m.fileSize || 'PDF'}
+                      {m.subject || m.chapter || 'PCMB'} · {m.fileSize || 'PDF'}
                     </p>
                   </div>
                   <button

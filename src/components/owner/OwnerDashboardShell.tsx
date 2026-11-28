@@ -13,6 +13,7 @@ import { OwnerOperationsView } from './OwnerOperationsView';
 import { OwnerOverviewView } from './OwnerOverviewView';
 import { OwnerPlansView } from './OwnerPlansView';
 import { OwnerSecurityView } from './OwnerSecurityView';
+import { OwnerTrialPortalsView } from './OwnerTrialPortalsView';
 
 interface OwnerDashboardShellProps {
   onBackToClientPortal: () => void;
@@ -101,6 +102,9 @@ export const OwnerDashboardShell: React.FC<OwnerDashboardShellProps> = ({
             setActiveModule('allocations');
           }}
         />
+      )}
+      {activeModule === 'trial-portals' && (
+        <OwnerTrialPortalsView data={data} onRefresh={() => loadBootstrap(true)} />
       )}
       {activeModule === 'licenses' && <OwnerLicensesView data={data} onRefresh={() => loadBootstrap(true)} />}
       {activeModule === 'allocations' && (

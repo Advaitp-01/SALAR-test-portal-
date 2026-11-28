@@ -1,10 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   addDoc,
   collection,
   deleteDoc,
   doc,
   getDocs,
+  notifyCloudAuthNeeded,
   onSnapshot,
   orderBy,
   query,
@@ -21,6 +22,8 @@ import {
   Folder,
   FolderPlus,
   Globe,
+  ImagePlus,
+  KeyRound,
   Layers,
   Play,
   Plus,
@@ -33,12 +36,18 @@ import {
   X,
 } from 'lucide-react';
 import { db } from '../../lib/firebase';
-import { handleFirestoreError, OperationType } from '../../lib/firestoreError';
+import {
+  isValidImageFile,
+  parseQuickAnswerKeys,
+  sortImageFilesNaturally,
+  type BulkImageDraft,
+} from '../../lib/bulkImageUtils';
 import {
   cloneExamIsolated,
   deleteExamCompletely,
   extractMathQuestionsWithOCR,
   importBankQuestionsIntoExam,
+  publishPublicCbtSnapshot,
   toggleExamStatus,
   uploadFileToServer,
 } from '../../lib/portalService';
@@ -97,24 +106,31 @@ const EXAM_TAG_PRESETS: Array<{
     neg: 1,
     defaultInstructions: 'Read each question carefully. Marks: +4 correct, -1 wrong.',
   },
+  {
+    label: 'PCMB Foundation (+4/-0)',
+    target: 'PCMB Foundation',
+    pos: 4,
+    neg: 0,
+    defaultInstructions: 'Read each question carefully. Marks: +4 correct, 0 negative marking.',
+  },
 ];
 
 const SUBJECT_OPTIONS = [
-  'Combined PCM',
   'Combined PCMB',
   'Physics',
   'Chemistry',
   'Mathematics',
   'Biology',
+  'Combined PCM',
 ];
 
 const QUESTION_SUBJECT_OPTIONS = [
-  'Mathematics',
   'Physics',
   'Chemistry',
+  'Mathematics',
   'Biology',
-  'Combined PCM',
   'Combined PCMB',
+  'Combined PCM',
 ];
 
 function generateExamCode(prefix = 'EX'): string {
@@ -130,7 +146,15 @@ function getPresetMarksFromExam(ex?: Exam | null): { pos: number; neg: number } 
 }
 
 export const ExamsView: React.FC = () => {
-  const { tenantContext, settings, syncStatus, firebaseUser, isIsolatedTenant, cloudAuthNeeded } = useAuth();
+  const {
+    tenantContext,
+    settings,
+    syncStatus,
+    firebaseUser,
+    isIsolatedTenant,
+    cloudAuthNeeded,
+    signInWithGoogle,
+  } = useAuth();
   const needsCloudAuth = !isIsolatedTenant && (!firebaseUser || cloudAuthNeeded);
   const examCodePrefix =
     tenantContext?.portalPath === '/'
@@ -141,8 +165,6 @@ export const ExamsView: React.FC = () => {
           .join('')
           .slice(0, 3)
           .toUpperCase() || 'EX';
-  const portalBase =
-    tenantContext?.portalPath && tenantContext.portalPath !== '/' ? tenantContext.portalPath : '';
   const [exams, setExams] = useState<Exam[]>([]);
   const [bankQuestions, setBankQuestions] = useState<Question[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
@@ -182,7 +204,7 @@ export const ExamsView: React.FC = () => {
   const [classLevel, setClassLevel] = useState<'Class 11th' | 'Class 12th' | 'All Classes'>('Class 11th');
   const [selectedPresetLabel, setSelectedPresetLabel] = useState('JEE Mains (+4/-1)');
   const [target, setTarget] = useState<Exam['target']>('JEE Main');
-  const [subject, setSubject] = useState('Combined PCM');
+  const [subject, setSubject] = useState('Combined PCMB');
   const [passingMarks, setPassingMarks] = useState(0);
   const [durationMinutes, setDurationMinutes] = useState(180);
   const [totalMarks, setTotalMarks] = useState(0);
@@ -194,6 +216,7 @@ export const ExamsView: React.FC = () => {
   const [startAt, setStartAt] = useState('');
   const [endAt, setEndAt] = useState('');
   const [folderSaving, setFolderSaving] = useState(false);
+  const [folderError, setFolderError] = useState('');
   const [folderAssignedBatches, setFolderAssignedBatches] = useState<string[]>([]);
 
   // Questions inside Folder Modal (tab 2)
@@ -202,14 +225,20 @@ export const ExamsView: React.FC = () => {
   const [uploadingPdf, setUploadingPdf] = useState(false);
   const [ocrFile, setOcrFile] = useState<File | null>(null);
   const [ocrLoading, setOcrLoading] = useState(false);
+  const [ocrError, setOcrError] = useState('');
   const [ocrDrafts, setOcrDrafts] = useState<Array<Partial<Question>>>([]);
 
-  // Create Question Modal ([Q1])
+  // Create / Edit Question Modal ([Q1])
   const [questionModalOpen, setQuestionModalOpen] = useState(false);
   const [qTargetExamId, setQTargetExamId] = useState('');
+  const [qFallbackExam, setQFallbackExam] = useState<Exam | null>(null);
   const [qTargetExamQuestionsCount, setQTargetExamQuestionsCount] = useState(0);
+  const [qEditingId, setQEditingId] = useState<string | null>(null);
+  const [qEditingOrderIndex, setQEditingOrderIndex] = useState<number>(0);
+  const [qIsDirty, setQIsDirty] = useState(false);
+  const [qSavedBadge, setQSavedBadge] = useState('');
   const [qClassLevel, setQClassLevel] = useState<'Class 11th' | 'Class 12th' | 'All Classes'>('Class 11th');
-  const [qSubject, setQSubject] = useState('Mathematics');
+  const [qSubject, setQSubject] = useState('Physics');
   const [qText, setQText] = useState('');
   const [qImageUrl, setQImageUrl] = useState('');
   const [qUploadingImage, setQUploadingImage] = useState(false);
@@ -227,11 +256,79 @@ export const ExamsView: React.FC = () => {
   const [qNegMarks, setQNegMarks] = useState(1);
   const [qSaving, setQSaving] = useState(false);
   const [qError, setQError] = useState('');
+  const [qModalMode, setQModalMode] = useState<'single' | 'bulk'>('single');
+  const [bulkImages, setBulkImages] = useState<BulkImageDraft[]>([]);
+  const [bulkKeyPaste, setBulkKeyPaste] = useState('');
+  const [bulkDragOver, setBulkDragOver] = useState(false);
+  const [bulkStatusText, setBulkStatusText] = useState('');
+  const [linkingCloud, setLinkingCloud] = useState(false);
+  const qUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const qReplaceInputRef = useRef<HTMLInputElement | null>(null);
+  const bulkUploadInputRef = useRef<HTMLInputElement | null>(null);
 
   // Analytics, Share Modal & CBT Preview
   const [analyticsExam, setAnalyticsExam] = useState<Exam | null>(null);
   const [shareModalExam, setShareModalExam] = useState<Exam | null>(null);
   const [cbtTestExam, setCbtTestExam] = useState<Exam | null>(null);
+
+  const formatActionError = useCallback(
+    (err: unknown, fallbackMessage: string): string => {
+      const raw = err instanceof Error ? err.message : String(err || '');
+      let msg = raw;
+      try {
+        const parsed = JSON.parse(raw) as { error?: string };
+        if (parsed && typeof parsed.error === 'string' && parsed.error.trim()) {
+          msg = parsed.error.trim();
+        }
+      } catch {
+        // non-JSON message
+      }
+      const lower = msg.toLowerCase();
+      if (
+        !isIsolatedTenant &&
+        (lower.includes('permission-denied') || lower.includes('missing or insufficient permissions'))
+      ) {
+        if (!firebaseUser) {
+          notifyCloudAuthNeeded(msg);
+          return 'Cloud Firestore requires your authorized Google admin account before saving. Click "Link Cloud Account Now" below (or in the top banner) and try again.';
+        }
+        return 'Firestore permission denied. Verify you are signed in with an authorized admin email and that the latest rules are deployed.';
+      }
+      return msg || fallbackMessage;
+    },
+    [firebaseUser, isIsolatedTenant]
+  );
+
+  const handleInlineLinkCloud = async () => {
+    setLinkingCloud(true);
+    try {
+      const res = await signInWithGoogle('SUPER_ADMIN');
+      if (res.error) {
+        pushToast(res.error, 'error');
+      } else {
+        setQError('');
+        setFolderError('');
+        pushToast('Cloud Firestore account linked! You can save now.');
+      }
+    } finally {
+      setLinkingCloud(false);
+    }
+  };
+
+  const syncExamSnapshotQuietly = useCallback(
+    async (examObj: Exam) => {
+      try {
+        await publishPublicCbtSnapshot({
+          orgId: tenantContext?.organizationId || 'SALAR-ORG-00001',
+          instituteName: tenantContext?.instituteName || settings.instituteName,
+          exam: examObj,
+        });
+      } catch {
+        // non-blocking background sync
+      }
+    },
+    [settings.instituteName, tenantContext?.instituteName, tenantContext?.organizationId]
+  );
 
   useEffect(() => {
     const u1 = onSnapshot(
@@ -241,7 +338,10 @@ export const ExamsView: React.FC = () => {
         list.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
         setExams(list);
       },
-      (err) => handleFirestoreError(err, OperationType.LIST, 'exams')
+      (err) => {
+        const formatted = formatActionError(err, 'Unable to load exams list.');
+        console.error('Exams listener error:', formatted);
+      }
     );
     const u2 = onSnapshot(
       collection(db, 'questions'),
@@ -270,7 +370,7 @@ export const ExamsView: React.FC = () => {
       u4();
       u5();
     };
-  }, []);
+  }, [formatActionError]);
 
   // Load isolated questions for the active editing exam inside Folder Modal
   useEffect(() => {
@@ -281,7 +381,9 @@ export const ExamsView: React.FC = () => {
     const unsub = onSnapshot(
       query(collection(db, 'exams', editingExam.id, 'questions'), orderBy('orderIndex', 'asc')),
       (snap) => setExamQuestions(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<ExamQuestion, 'id'>) }))),
-      (err) => handleFirestoreError(err, OperationType.LIST, `exams/${editingExam.id}/questions`)
+      (err) => {
+        console.error('Exam questions listener error:', err);
+      }
     );
     return () => unsub();
   }, [editingExam]);
@@ -308,6 +410,8 @@ export const ExamsView: React.FC = () => {
       try {
         const res = await uploadFileToServer(file);
         setQImageUrl(res.url);
+        setQIsDirty(true);
+        setQSavedBadge('');
       } catch (err) {
         setQError(err instanceof Error ? err.message : 'Failed to upload image.');
       } finally {
@@ -366,7 +470,7 @@ export const ExamsView: React.FC = () => {
     const s = search.trim().toLowerCase();
     return exams.filter((ex) => {
       if (statusFilter !== 'ALL' && ex.status !== statusFilter) return false;
-      const exSubj = ex.subject || 'Mathematics';
+      const exSubj = ex.subject || 'Combined PCMB';
       if (subjectFilter !== 'All Subjects' && exSubj !== subjectFilter) return false;
       const exFolder = ex.folderName?.trim() || 'General';
       if (folderFilter !== 'ALL' && exFolder !== folderFilter) return false;
@@ -393,6 +497,7 @@ export const ExamsView: React.FC = () => {
 
   const openCreateFolderModal = (presetFolder?: string, isOnlineExamClick = false) => {
     setEditingExam(null);
+    setFolderError('');
     setFolderModalTitle(isOnlineExamClick ? 'Create Online Exam' : 'Create Exam Folder*');
     setFolderModalTab('info');
     setCreateMode('blank');
@@ -405,7 +510,7 @@ export const ExamsView: React.FC = () => {
     setClassLevel('Class 11th');
     setSelectedPresetLabel('JEE Mains (+4/-1)');
     setTarget('JEE Main');
-    setSubject('Combined PCM');
+    setSubject('Combined PCMB');
     setPassingMarks(0);
     setDurationMinutes(180);
     setTotalMarks(0);
@@ -418,11 +523,13 @@ export const ExamsView: React.FC = () => {
     setEndAt('');
     setFolderAssignedBatches([]);
     setQuestionSubView('list');
+    setOcrError('');
     setFolderModalOpen(true);
   };
 
   const openEditExamModal = (ex: Exam, initialTab: 'info' | 'questions' | 'students' = 'info') => {
     setEditingExam(ex);
+    setFolderError('');
     setFolderModalTitle('Edit Exam Folder');
     setFolderModalTab(initialTab);
     setShowAdvancedModePicker(false);
@@ -434,7 +541,7 @@ export const ExamsView: React.FC = () => {
       EXAM_TAG_PRESETS.find((p) => p.label === ex.examTag || p.target === ex.target) || EXAM_TAG_PRESETS[0];
     setSelectedPresetLabel(ex.examTag || matchingPreset.label);
     setTarget(ex.target);
-    setSubject(ex.subject || 'Combined PCM');
+    setSubject(ex.subject || 'Combined PCMB');
     setPassingMarks(ex.passingMarks ?? 0);
     setDurationMinutes(ex.durationMinutes || 180);
     setTotalMarks(ex.totalMarks || 0);
@@ -447,13 +554,14 @@ export const ExamsView: React.FC = () => {
     setEndAt(ex.endAt || '');
     setFolderAssignedBatches(ex.assignedBatchIds || []);
     setQuestionSubView('list');
+    setOcrError('');
     setFolderModalOpen(true);
   };
 
   const handleSelectTagPreset = (preset: (typeof EXAM_TAG_PRESETS)[number]) => {
     setSelectedPresetLabel(preset.label);
     setTarget(preset.target);
-    if (preset.target === 'NEET' && (subject === 'Combined PCM' || subject === 'Mathematics')) {
+    if ((preset.target === 'NEET' || preset.target === 'PCMB Foundation') && (subject === 'Combined PCM' || subject === 'Mathematics')) {
       setSubject('Combined PCMB');
     }
     if (
@@ -464,15 +572,41 @@ export const ExamsView: React.FC = () => {
     }
   };
 
-  const openQuestionBuilderForExam = (ex: Exam) => {
+  const clearBulkImageDrafts = useCallback((itemsToClear?: BulkImageDraft[]) => {
+    setBulkImages((prev) => {
+      (itemsToClear || prev).forEach((item) => {
+        if (item.previewUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(item.previewUrl);
+        }
+      });
+      return [];
+    });
+    setBulkKeyPaste('');
+    setBulkStatusText('');
+    if (bulkUploadInputRef.current) bulkUploadInputRef.current.value = '';
+  }, []);
+
+  const closeQuestionModal = useCallback(() => {
+    clearBulkImageDrafts();
+    setQuestionModalOpen(false);
+  }, [clearBulkImageDrafts]);
+
+  const openQuestionBuilderForExam = (ex: Exam, initialMode: 'single' | 'bulk' = 'single') => {
     const preset = getPresetMarksFromExam(ex);
+    clearBulkImageDrafts();
+    setQModalMode(initialMode);
     setQTargetExamId(ex.id);
+    setQFallbackExam(ex);
     setQTargetExamQuestionsCount(ex.questionCount || 0);
+    setQEditingId(null);
+    setQEditingOrderIndex(ex.questionCount || 0);
+    setQIsDirty(false);
+    setQSavedBadge('');
     setQClassLevel(ex.classLevel);
     setQSubject(
       ex.subject === 'Combined PCM' || ex.subject === 'Combined PCMB'
-        ? 'Mathematics'
-        : ex.subject || 'Mathematics'
+        ? 'Combined PCMB'
+        : ex.subject || 'Combined PCMB'
     );
     setQText('');
     setQImageUrl('');
@@ -488,13 +622,80 @@ export const ExamsView: React.FC = () => {
     setQPosMarks(preset.pos);
     setQNegMarks(preset.neg);
     setQError('');
+    if (qUploadInputRef.current) qUploadInputRef.current.value = '';
+    if (qReplaceInputRef.current) qReplaceInputRef.current.value = '';
     setQuestionModalOpen(true);
   };
 
+  const openQuestionEditorForExam = (ex: Exam, q: ExamQuestion, displayIdx: number) => {
+    clearBulkImageDrafts();
+    setQModalMode('single');
+    setQTargetExamId(ex.id);
+    setQFallbackExam(ex);
+    setQTargetExamQuestionsCount(examQuestions.length || ex.questionCount || displayIdx + 1);
+    setQEditingId(q.id);
+    setQEditingOrderIndex(typeof q.orderIndex === 'number' ? q.orderIndex : displayIdx);
+    setQIsDirty(false);
+    setQSavedBadge(`Q${displayIdx + 1}`);
+    setQClassLevel(ex.classLevel);
+    setQSubject(
+      q.subject ||
+        (ex.subject === 'Combined PCM' || ex.subject === 'Combined PCMB'
+          ? 'Combined PCMB'
+          : ex.subject || 'Combined PCMB')
+    );
+    setQText(q.questionText || '');
+    setQImageUrl(q.questionImageUrl || '');
+    setQType(q.questionType || 'SINGLE_MCQ');
+    setQCorrectAnswer(q.correctAnswer || '');
+    const opts = ['A', 'B', 'C', 'D'].map((id) => {
+      const found = (q.options || []).find((o) => o.id === id);
+      return { id, text: found?.text || '' };
+    });
+    setQOptions(opts);
+    setShowOptionTexts(opts.some((o) => Boolean(o.text.trim())));
+    setQPosMarks(Number(q.positiveMarks ?? 4));
+    setQNegMarks(Number(q.negativeMarks ?? 1));
+    setQError('');
+    if (qUploadInputRef.current) qUploadInputRef.current.value = '';
+    if (qReplaceInputRef.current) qReplaceInputRef.current.value = '';
+    setQuestionModalOpen(true);
+  };
+
+  const targetExamOptions = useMemo(() => {
+    const map = new Map<string, Exam>();
+    exams.forEach((ex) => map.set(ex.id, ex));
+    if (qFallbackExam && !map.has(qFallbackExam.id)) {
+      map.set(qFallbackExam.id, qFallbackExam);
+    }
+    if (editingExam && !map.has(editingExam.id)) {
+      map.set(editingExam.id, editingExam);
+    }
+    return Array.from(map.values());
+  }, [exams, qFallbackExam, editingExam]);
+
+  const resolveTargetExam = useCallback(
+    (examId?: string): Exam | null => {
+      const targetId = examId || qTargetExamId;
+      if (!targetId) return null;
+      return (
+        exams.find((x) => x.id === targetId) ||
+        (qFallbackExam && qFallbackExam.id === targetId ? qFallbackExam : null) ||
+        (editingExam && editingExam.id === targetId ? editingExam : null)
+      );
+    },
+    [exams, qTargetExamId, qFallbackExam, editingExam]
+  );
+
   const handleSelectTargetExamInQuestionModal = (examId: string) => {
     setQTargetExamId(examId);
-    const chosen = exams.find((x) => x.id === examId);
+    setQEditingId(null);
+    setQIsDirty(Boolean(qText.trim() || qImageUrl.trim()));
+    setQSavedBadge('');
+    const chosen = resolveTargetExam(examId);
     if (chosen) {
+      setQFallbackExam(chosen);
+      setQTargetExamQuestionsCount(chosen.questionCount || 0);
       const preset = getPresetMarksFromExam(chosen);
       setQClassLevel(chosen.classLevel);
       setQPosMarks(preset.pos);
@@ -512,8 +713,11 @@ export const ExamsView: React.FC = () => {
 
   const handleSaveFolderOrExam = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFolderError('');
     if (!folderName.trim() || !title.trim()) {
-      pushToast('Please enter both Folder Name and Exam Name.', 'error');
+      const msg = 'Please enter both Folder Name and Exam Name.';
+      setFolderError(msg);
+      pushToast(msg, 'error');
       return;
     }
 
@@ -524,7 +728,7 @@ export const ExamsView: React.FC = () => {
     try {
       if (editingExam) {
         const nextStatus: 'LIVE' | 'DRAFT' = publishImmediate ? 'LIVE' : 'DRAFT';
-        await updateDoc(doc(db, 'exams', editingExam.id), {
+        const updatedPayload = {
           title: title.trim(),
           code: code.trim() || editingExam.code,
           classLevel,
@@ -546,13 +750,18 @@ export const ExamsView: React.FC = () => {
           assignedCount,
           instructions: instructions.trim(),
           updatedAt: now,
-        });
+        };
+        await updateDoc(doc(db, 'exams', editingExam.id), updatedPayload);
         if (nextStatus !== editingExam.status) {
           await toggleExamStatus(editingExam.id, nextStatus);
         }
+        const refreshedExam: Exam = { ...editingExam, ...updatedPayload };
+        setEditingExam(refreshedExam);
+        if (nextStatus === 'LIVE') {
+          void syncExamSnapshotQuietly(refreshedExam);
+        }
         pushToast(`Exam "${title.trim()}" updated successfully.`);
         setFolderModalOpen(false);
-        setFolderSaving(false);
         return;
       }
 
@@ -565,7 +774,6 @@ export const ExamsView: React.FC = () => {
           }
           pushToast(`Exam "${title.trim()}" cloned successfully!`);
           setFolderModalOpen(false);
-          setFolderSaving(false);
           return;
         }
       }
@@ -608,20 +816,28 @@ export const ExamsView: React.FC = () => {
       if (createMode === 'bank' && selectedBankIds.length > 0) {
         const chosen = bankQuestions.filter((q) => selectedBankIds.includes(q.id));
         await importBankQuestionsIntoExam(createdExam, chosen);
+        const importedTotalMarks = chosen.reduce((s, q) => s + Number(q.positiveMarks || 4), 0);
+        const finalExam = { ...createdExam, questionCount: chosen.length, totalMarks: importedTotalMarks };
+        if (initialStatus === 'LIVE') {
+          void syncExamSnapshotQuietly(finalExam);
+        }
         pushToast(`Exam "${title.trim()}" created with ${chosen.length} bank questions!`);
         setFolderModalOpen(false);
-        setFolderSaving(false);
         return;
       }
 
-      // Close Create Exam Folder modal, fire stacked toast notifications & launch Q1 Question Builder!
+      if (initialStatus === 'LIVE') {
+        void syncExamSnapshotQuietly(createdExam);
+      }
+
+      // Close Create Exam Folder modal, fire toast & launch Q1 Question Builder immediately!
       setFolderModalOpen(false);
-      pushToast(`Exam folder "${folderName.trim()}" created.`);
-      pushToast(`Exam "${title.trim()}" created successfully!`);
       pushToast(`Exam folder "${folderName.trim()}" (${classLevel}) created! Now upload or type your questions.`);
       openQuestionBuilderForExam(createdExam);
     } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, 'exams');
+      const msg = formatActionError(err, 'Failed to save exam folder. Please try again.');
+      setFolderError(msg);
+      pushToast(msg, 'error');
     } finally {
       setFolderSaving(false);
     }
@@ -629,8 +845,9 @@ export const ExamsView: React.FC = () => {
 
   const handleSaveBatchAssignmentsInModal = async () => {
     if (!editingExam) return;
-    const assignedCount = students.filter((s) => s.batchId && folderAssignedBatches.includes(s.batchId)).length;
+    setFolderError('');
     try {
+      const assignedCount = students.filter((s) => s.batchId && folderAssignedBatches.includes(s.batchId)).length;
       await updateDoc(doc(db, 'exams', editingExam.id), {
         assignedBatchIds: folderAssignedBatches,
         assignedCount,
@@ -640,14 +857,16 @@ export const ExamsView: React.FC = () => {
       setEditingExam({ ...editingExam, assignedBatchIds: folderAssignedBatches, assignedCount, isPublic });
       pushToast(`Updated student & batch access for "${editingExam.title}".`);
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `exams/${editingExam.id}`);
+      const msg = formatActionError(err, 'Failed to update student & batch assignments.');
+      setFolderError(msg);
+      pushToast(msg, 'error');
     }
   };
 
   const hasUnsavedQuestionContent = Boolean(qText.trim() || qImageUrl.trim());
 
   const persistCurrentQuestion = async (): Promise<Exam | null> => {
-    const targetExam = exams.find((x) => x.id === qTargetExamId) || editingExam;
+    const targetExam = resolveTargetExam();
     if (!targetExam) {
       setQError('Please select an Exam Folder / Paper first.');
       return null;
@@ -664,35 +883,79 @@ export const ExamsView: React.FC = () => {
     setQError('');
     setQSaving(true);
     const now = new Date().toISOString();
-    const pos = Number(qPosMarks) || 0;
+    const pos = Math.max(0, Number(qPosMarks) || 0);
     const neg = Math.abs(Number(qNegMarks) || 0);
     const isMcq = qType === 'SINGLE_MCQ' || qType === 'MULTI_MCQ' || qType === 'IMAGE_BASED';
 
     try {
       const existingSnap = await getDocs(collection(db, 'exams', targetExam.id, 'questions'));
-      const nextIndex = existingSnap.size;
-      const nextCount = nextIndex + 1;
-      const nextTotalMarks = Number(targetExam.totalMarks || 0) + pos;
+      const currentDocs: Array<{ id: string } & Partial<ExamQuestion>> = existingSnap.docs.map((d) => ({
+        id: d.id,
+        ...(d.data() as Partial<ExamQuestion>),
+      }));
 
-      await addDoc(collection(db, 'exams', targetExam.id, 'questions'), {
-        examId: targetExam.id,
-        examStatus: targetExam.status,
-        orderIndex: nextIndex,
-        title: `Question ${nextCount}`,
-        subject: qSubject,
-        questionText: qText.trim(),
-        questionImageUrl: qImageUrl.trim(),
-        questionType: qType,
-        options: isMcq ? qOptions.map((o) => ({ id: o.id, text: o.text.trim() })) : [],
-        correctAnswer: qCorrectAnswer.trim(),
-        explanation: '',
-        positiveMarks: pos,
-        negativeMarks: neg,
-        difficulty: 'MEDIUM',
-        chapter: '',
-        topic: '',
-        createdAt: now,
-      });
+      let nextCount = currentDocs.length;
+      let nextTotalMarks = 0;
+      let savedQuestionNumber = 1;
+
+      if (qEditingId && currentDocs.some((d) => d.id === qEditingId)) {
+        const orderNum = qEditingOrderIndex;
+        savedQuestionNumber = orderNum + 1;
+        await updateDoc(doc(db, 'exams', targetExam.id, 'questions', qEditingId), {
+          examStatus: targetExam.status,
+          subject: qSubject,
+          questionText: qText.trim(),
+          questionImageUrl: qImageUrl.trim(),
+          questionType: qType,
+          options: isMcq ? qOptions.map((o) => ({ id: o.id, text: o.text.trim() })) : [],
+          correctAnswer: qCorrectAnswer.trim(),
+          positiveMarks: pos,
+          negativeMarks: neg,
+        });
+
+        nextCount = currentDocs.length;
+        nextTotalMarks = currentDocs.reduce((sum, d) => {
+          if (d.id === qEditingId) return sum + pos;
+          return sum + Number(d.positiveMarks || 0);
+        }, 0);
+        setQSavedBadge(`Q${savedQuestionNumber} updated`);
+        pushToast(`Question Q${savedQuestionNumber} updated in "${targetExam.title}".`);
+      } else {
+        const maxOrder = currentDocs.reduce(
+          (max, d) => Math.max(max, typeof d.orderIndex === 'number' ? d.orderIndex : -1),
+          -1
+        );
+        const nextIndex = Math.max(currentDocs.length, maxOrder + 1);
+        nextCount = currentDocs.length + 1;
+        savedQuestionNumber = nextCount;
+        nextTotalMarks =
+          currentDocs.reduce((sum, d) => sum + Number(d.positiveMarks || 0), 0) + pos;
+
+        const createdQRef = await addDoc(collection(db, 'exams', targetExam.id, 'questions'), {
+          examId: targetExam.id,
+          examStatus: targetExam.status,
+          orderIndex: nextIndex,
+          title: `Question ${nextCount}`,
+          subject: qSubject,
+          questionText: qText.trim(),
+          questionImageUrl: qImageUrl.trim(),
+          questionType: qType,
+          options: isMcq ? qOptions.map((o) => ({ id: o.id, text: o.text.trim() })) : [],
+          correctAnswer: qCorrectAnswer.trim(),
+          explanation: '',
+          positiveMarks: pos,
+          negativeMarks: neg,
+          difficulty: 'MEDIUM',
+          chapter: '',
+          topic: '',
+          createdAt: now,
+        });
+
+        setQEditingId(createdQRef.id);
+        setQEditingOrderIndex(nextIndex);
+        setQSavedBadge(`Q${savedQuestionNumber} saved`);
+        pushToast(`Question Q${nextCount} saved to "${targetExam.title}".`);
+      }
 
       await updateDoc(doc(db, 'exams', targetExam.id), {
         questionCount: nextCount,
@@ -700,14 +963,23 @@ export const ExamsView: React.FC = () => {
         updatedAt: now,
       });
 
+      const updatedExam: Exam = {
+        ...targetExam,
+        questionCount: nextCount,
+        totalMarks: nextTotalMarks,
+        updatedAt: now,
+      };
+      setQFallbackExam(updatedExam);
       if (editingExam && editingExam.id === targetExam.id) {
-        setEditingExam({ ...editingExam, questionCount: nextCount, totalMarks: nextTotalMarks });
+        setEditingExam(updatedExam);
       }
       setQTargetExamQuestionsCount(nextCount);
-      pushToast(`Question Q${nextCount} saved to "${targetExam.title}".`);
-      return { ...targetExam, questionCount: nextCount, totalMarks: nextTotalMarks };
+      setQIsDirty(false);
+      return updatedExam;
     } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, `exams/${targetExam.id}/questions`);
+      const msg = formatActionError(err, 'Failed to save question.');
+      setQError(msg);
+      pushToast(msg, 'error');
       return null;
     } finally {
       setQSaving(false);
@@ -715,9 +987,12 @@ export const ExamsView: React.FC = () => {
   };
 
   const resetQuestionInputsForNext = () => {
+    setQEditingId(null);
+    setQIsDirty(false);
+    setQSavedBadge('');
     setQText('');
     setQImageUrl('');
-    setQCorrectAnswer(qType === 'NUMERICAL' || qType === 'INTEGER' ? '' : 'A');
+    setQCorrectAnswer(qType === 'NUMERICAL' || qType === 'INTEGER' || qType === 'MULTI_MCQ' ? '' : 'A');
     setShowOptionTexts(false);
     setQOptions([
       { id: 'A', text: '' },
@@ -726,6 +1001,8 @@ export const ExamsView: React.FC = () => {
       { id: 'D', text: '' },
     ]);
     setQError('');
+    if (qUploadInputRef.current) qUploadInputRef.current.value = '';
+    if (qReplaceInputRef.current) qReplaceInputRef.current.value = '';
   };
 
   const handleQuestionSave = async () => {
@@ -733,6 +1010,11 @@ export const ExamsView: React.FC = () => {
   };
 
   const handleQuestionSaveAndNext = async () => {
+    // If current question was already saved via Save and hasn't been edited since, advance cleanly without duplicating!
+    if (qEditingId && !qIsDirty) {
+      resetQuestionInputsForNext();
+      return;
+    }
     const saved = await persistCurrentQuestion();
     if (saved) {
       resetQuestionInputsForNext();
@@ -740,27 +1022,231 @@ export const ExamsView: React.FC = () => {
   };
 
   const handleQuestionFinishAndShare = async () => {
-    let targetExam = exams.find((x) => x.id === qTargetExamId) || editingExam;
-    if (hasUnsavedQuestionContent) {
+    let targetExam = resolveTargetExam();
+    const needsSave = hasUnsavedQuestionContent && (!qEditingId || qIsDirty);
+    if (needsSave) {
       const saved = await persistCurrentQuestion();
       if (!saved) return;
       targetExam = saved;
     }
-    setQuestionModalOpen(false);
+    closeQuestionModal();
     if (targetExam) {
-      await shareExamLink(targetExam);
+      void syncExamSnapshotQuietly(targetExam);
+      shareExamLink(targetExam);
     }
   };
 
   const handleQuestionFinish = async () => {
-    if (hasUnsavedQuestionContent) {
+    let targetExam = resolveTargetExam();
+    const needsSave = hasUnsavedQuestionContent && (!qEditingId || qIsDirty);
+    if (needsSave) {
       const saved = await persistCurrentQuestion();
       if (!saved) return;
+      targetExam = saved;
     }
-    setQuestionModalOpen(false);
+    if (targetExam) {
+      void syncExamSnapshotQuietly(targetExam);
+    }
+    closeQuestionModal();
+  };
+
+  const handleAddBulkImageFiles = (fileList: FileList | File[]) => {
+    const valid = sortImageFilesNaturally(Array.from(fileList).filter(isValidImageFile));
+    if (valid.length === 0) {
+      setQError('Please select valid question images (PNG, JPG, JPEG, WebP).');
+      return;
+    }
+    setQError('');
+    const newDrafts: BulkImageDraft[] = valid.map((file, idx) => ({
+      id: `blk_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 7)}`,
+      file,
+      fileName: file.name,
+      previewUrl: URL.createObjectURL(file),
+      answerKey: 'A',
+    }));
+    setBulkImages((prev) => {
+      const combined = [...prev, ...newDrafts];
+      combined.sort((a, b) =>
+        a.fileName.localeCompare(b.fileName, undefined, { numeric: true, sensitivity: 'base' })
+      );
+      return combined;
+    });
+    pushToast(`Prepared ${valid.length} image(s) in order!`);
+  };
+
+  const handleRemoveBulkImage = (id: string) => {
+    setBulkImages((prev) => {
+      const target = prev.find((item) => item.id === id);
+      if (target && target.previewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(target.previewUrl);
+      }
+      return prev.filter((item) => item.id !== id);
+    });
+  };
+
+  const handleSetBulkItemAnswer = (id: string, answerKey: 'A' | 'B' | 'C' | 'D') => {
+    setBulkImages((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, answerKey } : item))
+    );
+  };
+
+  const handleApplyBulkAnswerKeys = () => {
+    if (bulkImages.length === 0) return;
+    const parsed = parseQuickAnswerKeys(bulkKeyPaste, bulkImages.length);
+    if (parsed.size === 0) {
+      setQError('Could not recognize answer keys. Try formats like "A,B,C,D" or "1.A 2.B 3.C".');
+      return;
+    }
+    setQError('');
+    setBulkImages((prev) =>
+      prev.map((item, idx) => ({
+        ...item,
+        answerKey: parsed.get(idx) || item.answerKey,
+      }))
+    );
+    pushToast(`Applied ${parsed.size} answer key(s) cleanly!`);
+  };
+
+  const handleCommitBulkImages = async (shareAfter: boolean) => {
+    const targetExam = resolveTargetExam();
+    if (!targetExam) {
+      setQError('Please select an Exam Folder / Paper first.');
+      return;
+    }
+    if (bulkImages.length === 0) {
+      setQError('Please drop or select at least 1 question image first.');
+      return;
+    }
+
+    setQError('');
+    setQSaving(true);
+    const total = bulkImages.length;
+    const pos = Math.max(0, Number(qPosMarks) || getPresetMarksFromExam(targetExam).pos);
+    const neg = Math.abs(Number(qNegMarks) || getPresetMarksFromExam(targetExam).neg);
+    const now = new Date().toISOString();
+
+    try {
+      const uploadedUrls: string[] = new Array(total);
+      let completedUploads = 0;
+      const CONCURRENCY = 4;
+
+      for (let start = 0; start < total; start += CONCURRENCY) {
+        const slice = bulkImages.slice(start, start + CONCURRENCY);
+        await Promise.all(
+          slice.map(async (item, offset) => {
+            const res = await uploadFileToServer(item.file);
+            uploadedUrls[start + offset] = res.url;
+            completedUploads += 1;
+            setBulkStatusText(`Preparing images ${completedUploads}/${total}...`);
+          })
+        );
+      }
+
+      setBulkStatusText('Reading existing exam structure...');
+      const existingSnap = await getDocs(collection(db, 'exams', targetExam.id, 'questions'));
+      const currentDocs: Array<{ id: string } & Partial<ExamQuestion>> = existingSnap.docs.map((d) => ({
+        id: d.id,
+        ...(d.data() as Partial<ExamQuestion>),
+      }));
+      const maxOrder = currentDocs.reduce(
+        (max, d) => Math.max(max, typeof d.orderIndex === 'number' ? d.orderIndex : -1),
+        -1
+      );
+      const startIndex = Math.max(currentDocs.length, maxOrder + 1);
+      const existingMarks = currentDocs.reduce((sum, d) => sum + Number(d.positiveMarks || 0), 0);
+
+      // Write in compact chunks of 8 docs per batch so Data URLs never exceed Firestore's 10 MiB batch payload cap
+      const CHUNK_SIZE = 8;
+      for (let chunkStart = 0; chunkStart < total; chunkStart += CHUNK_SIZE) {
+        const chunkEnd = Math.min(total, chunkStart + CHUNK_SIZE);
+        setBulkStatusText(`Syncing Q${chunkStart + 1}–Q${chunkEnd} of ${total} to Cloud...`);
+        const batch = writeBatch(db);
+        for (let i = chunkStart; i < chunkEnd; i += 1) {
+          const item = bulkImages[i];
+          const orderIdx = startIndex + i;
+          const displayNum = currentDocs.length + i + 1;
+          const qRef = doc(collection(db, 'exams', targetExam.id, 'questions'));
+          batch.set(qRef, {
+            examId: targetExam.id,
+            examStatus: targetExam.status,
+            orderIndex: orderIdx,
+            title: `Question ${displayNum}`,
+            subject: qSubject,
+            questionText: '',
+            questionImageUrl: uploadedUrls[i],
+            questionType: 'IMAGE_BASED',
+            options: [
+              { id: 'A', text: '' },
+              { id: 'B', text: '' },
+              { id: 'C', text: '' },
+              { id: 'D', text: '' },
+            ],
+            correctAnswer: item.answerKey,
+            explanation: '',
+            positiveMarks: pos,
+            negativeMarks: neg,
+            difficulty: 'MEDIUM',
+            chapter: '',
+            topic: '',
+            createdAt: now,
+          });
+        }
+        await batch.commit();
+      }
+
+      const nextCount = currentDocs.length + total;
+      const nextTotalMarks = existingMarks + total * pos;
+      await updateDoc(doc(db, 'exams', targetExam.id), {
+        questionCount: nextCount,
+        totalMarks: nextTotalMarks,
+        updatedAt: now,
+      });
+
+      const updatedExam: Exam = {
+        ...targetExam,
+        questionCount: nextCount,
+        totalMarks: nextTotalMarks,
+        updatedAt: now,
+      };
+      setQFallbackExam(updatedExam);
+      if (editingExam && editingExam.id === targetExam.id) {
+        setEditingExam(updatedExam);
+      }
+      setQTargetExamQuestionsCount(nextCount);
+
+      if (shareAfter || updatedExam.status === 'LIVE') {
+        setBulkStatusText('Syncing Public CBT Link...');
+        await syncExamSnapshotQuietly(updatedExam);
+      }
+
+      closeQuestionModal();
+      pushToast(`Attached ${total} question image(s) to "${targetExam.title}"!`);
+      if (shareAfter) {
+        shareExamLink(updatedExam);
+      }
+    } catch (err) {
+      const msg = formatActionError(err, 'Failed to attach bulk question images.');
+      setQError(msg);
+      pushToast(msg, 'error');
+    } finally {
+      setBulkStatusText('');
+      setQSaving(false);
+    }
+  };
+
+  const handleOpenBulkImagesShortcut = () => {
+    const preferredExam = editingExam || exams[0];
+    if (!preferredExam) {
+      pushToast('Create an Exam Folder first, then drop 10–100 question images at once!');
+      openCreateFolderModal(undefined, false);
+      return;
+    }
+    openQuestionBuilderForExam(preferredExam, 'bulk');
   };
 
   const toggleAnswerKeyOption = (optId: string) => {
+    setQIsDirty(true);
+    setQSavedBadge('');
     if (qType === 'MULTI_MCQ') {
       const current = new Set(
         qCorrectAnswer
@@ -780,22 +1266,28 @@ export const ExamsView: React.FC = () => {
     if (!editingExam) return;
     try {
       await deleteDoc(doc(db, 'exams', editingExam.id, 'questions', q.id));
-      const nextCount = Math.max(0, examQuestions.length - 1);
-      const nextMarks = Math.max(0, (editingExam.totalMarks || 0) - Number(q.positiveMarks || 0));
+      const remaining = examQuestions.filter((item) => item.id !== q.id);
+      const nextCount = remaining.length;
+      const nextMarks = remaining.reduce((sum, item) => sum + Number(item.positiveMarks || 0), 0);
       await updateDoc(doc(db, 'exams', editingExam.id), {
         questionCount: nextCount,
         totalMarks: nextMarks,
         updatedAt: new Date().toISOString(),
       });
-      setEditingExam({ ...editingExam, questionCount: nextCount, totalMarks: nextMarks });
+      const updated = { ...editingExam, questionCount: nextCount, totalMarks: nextMarks };
+      setEditingExam(updated);
+      if (updated.status === 'LIVE') {
+        void syncExamSnapshotQuietly(updated);
+      }
       pushToast('Question removed from paper.');
     } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `exams/${editingExam.id}/questions/${q.id}`);
+      pushToast(formatActionError(err, 'Failed to remove question.'), 'error');
     }
   };
 
   const handleUploadExamPdf = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.currentTarget.value = '';
     if (!file || !editingExam) return;
     setUploadingPdf(true);
     try {
@@ -806,6 +1298,8 @@ export const ExamsView: React.FC = () => {
       });
       setEditingExam({ ...editingExam, pdfUrl: res.url });
       pushToast('Exam reference PDF attached.');
+    } catch (err) {
+      pushToast(formatActionError(err, 'Failed to upload exam PDF.'), 'error');
     } finally {
       setUploadingPdf(false);
     }
@@ -813,6 +1307,7 @@ export const ExamsView: React.FC = () => {
 
   const handleRunExamOCR = async () => {
     if (!ocrFile || !editingExam) return;
+    setOcrError('');
     setOcrLoading(true);
     try {
       const extracted = await extractMathQuestionsWithOCR({
@@ -821,6 +1316,13 @@ export const ExamsView: React.FC = () => {
         defaultExamCategory: editingExam.target,
       });
       setOcrDrafts(extracted);
+      if (extracted.length === 0) {
+        setOcrError('No questions were detected in the uploaded file. Try a clearer image or PDF.');
+      }
+    } catch (err) {
+      const msg = formatActionError(err, 'OCR extraction failed.');
+      setOcrError(msg);
+      pushToast(msg, 'error');
     } finally {
       setOcrLoading(false);
     }
@@ -828,44 +1330,63 @@ export const ExamsView: React.FC = () => {
 
   const handleCommitExamOCR = async () => {
     if (!editingExam || ocrDrafts.length === 0) return;
+    setOcrError('');
     const now = new Date().toISOString();
-    const batch = writeBatch(db);
-    let addedMarks = 0;
-    ocrDrafts.forEach((d, idx) => {
-      const pos = Number(d.positiveMarks ?? 4);
-      addedMarks += pos;
-      batch.set(doc(collection(db, 'exams', editingExam.id, 'questions')), {
-        examId: editingExam.id,
-        examStatus: editingExam.status,
-        orderIndex: examQuestions.length + idx,
-        title: d.title || `Q${examQuestions.length + idx + 1}`,
-        subject: editingExam.subject || 'Mathematics',
-        questionText: d.questionText || '',
-        questionImageUrl: '',
-        questionType: (d.questionType as QuestionType) || 'SINGLE_MCQ',
-        options: d.options || [],
-        correctAnswer: d.correctAnswer || '',
-        explanation: d.explanation || '',
-        positiveMarks: pos,
-        negativeMarks: Number(d.negativeMarks ?? 1),
-        difficulty: d.difficulty || 'MEDIUM',
-        chapter: d.chapter || '',
-        topic: d.topic || '',
-        createdAt: now,
+    try {
+      const batch = writeBatch(db);
+      let addedMarks = 0;
+      const validTypes = new Set<QuestionType>(['SINGLE_MCQ', 'MULTI_MCQ', 'NUMERICAL', 'INTEGER', 'IMAGE_BASED']);
+      const validDiffs = new Set(['EASY', 'MEDIUM', 'HARD']);
+
+      ocrDrafts.forEach((d, idx) => {
+        const pos = Math.max(0, Number(d.positiveMarks ?? 4) || 4);
+        addedMarks += pos;
+        const qTypeVal: QuestionType = validTypes.has(d.questionType as QuestionType)
+          ? (d.questionType as QuestionType)
+          : 'SINGLE_MCQ';
+        const diffVal = validDiffs.has(String(d.difficulty)) ? d.difficulty : 'MEDIUM';
+        batch.set(doc(collection(db, 'exams', editingExam.id, 'questions')), {
+          examId: editingExam.id,
+          examStatus: editingExam.status,
+          orderIndex: examQuestions.length + idx,
+          title: (d.title || `Q${examQuestions.length + idx + 1}`).slice(0, 240),
+          subject: d.subject || editingExam.subject || 'Combined PCMB',
+          questionText: (d.questionText || `Extracted Question ${idx + 1}`).slice(0, 14500),
+          questionImageUrl: '',
+          questionType: qTypeVal,
+          options: Array.isArray(d.options) ? d.options.slice(0, 8) : [],
+          correctAnswer: String(d.correctAnswer || '').slice(0, 490),
+          explanation: String(d.explanation || '').slice(0, 9500),
+          positiveMarks: pos,
+          negativeMarks: Math.abs(Number(d.negativeMarks ?? 1) || 0),
+          difficulty: diffVal,
+          chapter: String(d.chapter || '').slice(0, 110),
+          topic: String(d.topic || '').slice(0, 110),
+          createdAt: now,
+        });
       });
-    });
-    const nextCount = examQuestions.length + ocrDrafts.length;
-    const nextMarks = (editingExam.totalMarks || 0) + addedMarks;
-    batch.update(doc(db, 'exams', editingExam.id), {
-      questionCount: nextCount,
-      totalMarks: nextMarks,
-      updatedAt: now,
-    });
-    await batch.commit();
-    setEditingExam({ ...editingExam, questionCount: nextCount, totalMarks: nextMarks });
-    setOcrDrafts([]);
-    setQuestionSubView('list');
-    pushToast(`Imported ${ocrDrafts.length} OCR questions into "${editingExam.title}".`);
+      const existingMarks = examQuestions.reduce((sum, q) => sum + Number(q.positiveMarks || 0), 0);
+      const nextCount = examQuestions.length + ocrDrafts.length;
+      const nextMarks = existingMarks + addedMarks;
+      batch.update(doc(db, 'exams', editingExam.id), {
+        questionCount: nextCount,
+        totalMarks: nextMarks,
+        updatedAt: now,
+      });
+      await batch.commit();
+      const updated = { ...editingExam, questionCount: nextCount, totalMarks: nextMarks };
+      setEditingExam(updated);
+      if (updated.status === 'LIVE') {
+        void syncExamSnapshotQuietly(updated);
+      }
+      setOcrDrafts([]);
+      setQuestionSubView('list');
+      pushToast(`Imported ${ocrDrafts.length} OCR questions into "${editingExam.title}".`);
+    } catch (err) {
+      const msg = formatActionError(err, 'Failed to save OCR questions.');
+      setOcrError(msg);
+      pushToast(msg, 'error');
+    }
   };
 
   const shareExamLink = (ex: Exam) => {
@@ -873,8 +1394,12 @@ export const ExamsView: React.FC = () => {
   };
 
   const handleClone = async (ex: Exam) => {
-    await cloneExamIsolated(ex, `${ex.title} (Copy)`, `${ex.code}-COPY`);
-    pushToast(`Cloned "${ex.title}" cleanly.`);
+    try {
+      await cloneExamIsolated(ex, `${ex.title} (Copy)`, `${ex.code}-COPY`);
+      pushToast(`Cloned "${ex.title}" cleanly.`);
+    } catch (err) {
+      pushToast(formatActionError(err, 'Failed to clone exam.'), 'error');
+    }
   };
 
   if (cbtTestExam) {
@@ -912,6 +1437,14 @@ export const ExamsView: React.FC = () => {
             <CheckCircle2 className="w-3.5 h-3.5" />
             {needsCloudAuth ? 'Cloud Auth Required' : syncStatus === 'SYNCED' ? 'Cloud Sync Active' : 'Offline Mode'}
           </span>
+          <button
+            type="button"
+            onClick={handleOpenBulkImagesShortcut}
+            className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold border border-emerald-300 bg-emerald-50 text-[#059669] rounded-lg hover:bg-emerald-100 transition-colors"
+          >
+            <ImagePlus className="w-4 h-4" />
+            Bulk Images
+          </button>
           <button
             type="button"
             onClick={() => openCreateFolderModal(undefined, false)}
@@ -1037,7 +1570,7 @@ export const ExamsView: React.FC = () => {
                       </span>
                     </div>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      {firstExam?.subject || 'Mathematics'} · {firstExam?.examTag || firstExam?.target}
+                      {firstExam?.subject || 'Combined PCMB'} · {firstExam?.examTag || firstExam?.target}
                     </p>
                   </div>
                   <button
@@ -1061,7 +1594,7 @@ export const ExamsView: React.FC = () => {
                         <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono text-slate-500">
                           <span className="font-bold text-[#0032A0]">{ex.code}</span>
                           <span aria-hidden="true">·</span>
-                          <span className="font-semibold text-slate-700">{ex.subject || 'Mathematics'}</span>
+                          <span className="font-semibold text-slate-700">{ex.subject || 'Combined PCMB'}</span>
                           <span aria-hidden="true">·</span>
                           <span>{ex.classLevel}</span>
                           <span aria-hidden="true">·</span>
@@ -1124,8 +1657,15 @@ export const ExamsView: React.FC = () => {
                           type="button"
                           onClick={async () => {
                             const next = ex.status === 'LIVE' ? 'DRAFT' : 'LIVE';
-                            await toggleExamStatus(ex.id, next);
-                            pushToast(`"${ex.title}" is now ${next}.`);
+                            try {
+                              await toggleExamStatus(ex.id, next);
+                              if (next === 'LIVE') {
+                                void syncExamSnapshotQuietly({ ...ex, status: next });
+                              }
+                              pushToast(`"${ex.title}" is now ${next}.`);
+                            } catch (err) {
+                              pushToast(formatActionError(err, 'Failed to change exam status.'), 'error');
+                            }
                           }}
                           className={`inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg border ${
                             ex.status === 'LIVE'
@@ -1171,8 +1711,12 @@ export const ExamsView: React.FC = () => {
                         <button
                           type="button"
                           onClick={async () => {
-                            await deleteExamCompletely(ex.id);
-                            pushToast(`Deleted exam "${ex.title}".`);
+                            try {
+                              await deleteExamCompletely(ex.id);
+                              pushToast(`Deleted exam "${ex.title}".`);
+                            } catch (err) {
+                              pushToast(formatActionError(err, 'Failed to delete exam.'), 'error');
+                            }
                           }}
                           className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg border border-transparent hover:border-red-200"
                           title="Delete Exam"
@@ -1253,6 +1797,22 @@ export const ExamsView: React.FC = () => {
 
             {/* Modal Body */}
             <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-5">
+              {folderError && (
+                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 space-y-2">
+                  <p className="font-medium leading-relaxed">{folderError}</p>
+                  {needsCloudAuth && (
+                    <button
+                      type="button"
+                      disabled={linkingCloud}
+                      onClick={handleInlineLinkCloud}
+                      className="px-3 py-1.5 text-xs font-semibold bg-[#0032A0] hover:bg-[#00257a] text-white rounded-md disabled:opacity-60"
+                    >
+                      {linkingCloud ? 'Linking Cloud Account...' : 'Link Cloud Account Now'}
+                    </button>
+                  )}
+                </div>
+              )}
+
               {/* TAB 1: FOLDER INFO */}
               {folderModalTab === 'info' && (
                 <form id="exam-folder-form" onSubmit={handleSaveFolderOrExam} className="space-y-4">
@@ -1309,7 +1869,7 @@ export const ExamsView: React.FC = () => {
                         required
                         value={folderName}
                         onChange={(e) => setFolderName(e.target.value)}
-                        placeholder="e.g. 11th JEE Maths Paper 1"
+                        placeholder="e.g. 11th PCMB Mock Paper 1"
                         className="w-full px-3 py-2 text-sm border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#2563EB]"
                       />
                     </div>
@@ -1576,11 +2136,19 @@ export const ExamsView: React.FC = () => {
                         <div className="flex flex-wrap items-center gap-1.5">
                           <button
                             type="button"
-                            onClick={() => openQuestionBuilderForExam(editingExam)}
+                            onClick={() => openQuestionBuilderForExam(editingExam, 'single')}
                             className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold bg-[#0032A0] text-white rounded-lg hover:bg-[#00257a]"
                           >
                             <Plus className="w-3.5 h-3.5" />
                             Add Question [Q{examQuestions.length + 1}]
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openQuestionBuilderForExam(editingExam, 'bulk')}
+                            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold border border-emerald-300 bg-emerald-50 text-[#059669] rounded-lg hover:bg-emerald-100"
+                          >
+                            <ImagePlus className="w-3.5 h-3.5" />
+                            Bulk Upload Images
                           </button>
                           <button
                             type="button"
@@ -1640,11 +2208,23 @@ export const ExamsView: React.FC = () => {
                             type="button"
                             disabled={selectedBankIds.length === 0}
                             onClick={async () => {
-                              const chosen = bankQuestions.filter((q) => selectedBankIds.includes(q.id));
-                              await importBankQuestionsIntoExam(editingExam, chosen);
-                              pushToast(`Imported ${chosen.length} questions from Bank.`);
-                              setSelectedBankIds([]);
-                              setQuestionSubView('list');
+                              try {
+                                const chosen = bankQuestions.filter((q) => selectedBankIds.includes(q.id));
+                                await importBankQuestionsIntoExam(editingExam, chosen);
+                                const addedMarks = chosen.reduce((s, q) => s + Number(q.positiveMarks || 4), 0);
+                                const nextCount = examQuestions.length + chosen.length;
+                                const nextMarks = (editingExam.totalMarks || 0) + addedMarks;
+                                const updated = { ...editingExam, questionCount: nextCount, totalMarks: nextMarks };
+                                setEditingExam(updated);
+                                if (updated.status === 'LIVE') {
+                                  void syncExamSnapshotQuietly(updated);
+                                }
+                                pushToast(`Imported ${chosen.length} questions from Bank.`);
+                                setSelectedBankIds([]);
+                                setQuestionSubView('list');
+                              } catch (err) {
+                                pushToast(formatActionError(err, 'Failed to import questions from Bank.'), 'error');
+                              }
                             }}
                             className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-[#0032A0] text-white rounded-lg disabled:opacity-50"
                           >
@@ -1660,7 +2240,10 @@ export const ExamsView: React.FC = () => {
                             <input
                               type="file"
                               accept="image/*,application/pdf"
-                              onChange={(e) => setOcrFile(e.target.files?.[0] || null)}
+                              onChange={(e) => {
+                                setOcrFile(e.target.files?.[0] || null);
+                                setOcrError('');
+                              }}
                               className="text-xs"
                             />
                             <button
@@ -1670,9 +2253,14 @@ export const ExamsView: React.FC = () => {
                               className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-[#0032A0] text-white rounded-lg disabled:opacity-50"
                             >
                               <ScanText className="w-4 h-4" />
-                              {ocrLoading ? 'Extracting...' : 'Extract Math Questions'}
+                              {ocrLoading ? 'Extracting...' : 'Extract PCMB Questions'}
                             </button>
                           </div>
+                          {ocrError && (
+                            <div className="p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
+                              {ocrError}
+                            </div>
+                          )}
                           {ocrDrafts.length > 0 && (
                             <div className="space-y-2 pt-2">
                               <p className="text-xs font-semibold text-emerald-700">
@@ -1706,15 +2294,26 @@ export const ExamsView: React.FC = () => {
                               <div key={q.id} className="border border-[#E2E8F0] rounded-lg p-4 space-y-2">
                                 <div className="flex items-center justify-between gap-2 text-xs font-mono">
                                   <span className="font-bold text-[#0032A0]">
-                                    Q{idx + 1} · {q.subject || editingExam.subject || 'Mathematics'} · {q.questionType} · +{q.positiveMarks}/-{q.negativeMarks}
+                                    Q{idx + 1} · {q.subject || editingExam.subject || 'Combined PCMB'} · {q.questionType} · +{q.positiveMarks}/-{q.negativeMarks}
                                   </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteExamQuestion(q)}
-                                    className="text-red-600 hover:bg-red-50 p-1 rounded"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => openQuestionEditorForExam(editingExam, q, idx)}
+                                      className="text-slate-600 hover:text-[#0032A0] hover:bg-blue-50 p-1 rounded"
+                                      title={`Edit Q${idx + 1}`}
+                                    >
+                                      <Edit2 className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteExamQuestion(q)}
+                                      className="text-red-600 hover:bg-red-50 p-1 rounded"
+                                      title={`Delete Q${idx + 1}`}
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  </div>
                                 </div>
                                 {q.questionText && (
                                   <div className="text-sm text-slate-800">
@@ -1840,15 +2439,23 @@ export const ExamsView: React.FC = () => {
           <div className="bg-white border border-[#E2E8F0] rounded-xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden shadow-xl">
             {/* Header */}
             <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-[#E2E8F0] shrink-0">
-              <div className="flex items-center gap-2.5">
-                <h2 className="font-display font-bold text-base text-[#0F172A]">Create Question</h2>
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <h2 className="font-display font-bold text-base text-[#0F172A]">
+                  {qEditingId ? 'Edit Question' : 'Create Question'}
+                </h2>
                 <span className="px-2 py-0.5 text-xs font-mono font-bold bg-[#0032A0] text-white rounded">
-                  Q{qTargetExamQuestionsCount + 1}
+                  Q{qEditingId ? qEditingOrderIndex + 1 : qTargetExamQuestionsCount + 1}
                 </span>
+                {qSavedBadge && !qIsDirty && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-mono font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 rounded">
+                    <Check className="w-3 h-3" />
+                    {qSavedBadge}
+                  </span>
+                )}
               </div>
               <button
                 type="button"
-                onClick={() => setQuestionModalOpen(false)}
+                onClick={closeQuestionModal}
                 className="text-slate-400 hover:text-slate-700 p-1 rounded-lg"
                 aria-label="Close question builder"
               >
@@ -1869,7 +2476,8 @@ export const ExamsView: React.FC = () => {
                     onChange={(e) => handleSelectTargetExamInQuestionModal(e.target.value)}
                     className="w-full px-2.5 py-2 text-xs border border-[#E2E8F0] rounded-lg bg-white focus:outline-none focus:border-[#2563EB]"
                   >
-                    {exams.map((ex) => (
+                    {targetExamOptions.length === 0 && <option value="">No exam folder selected</option>}
+                    {targetExamOptions.map((ex) => (
                       <option key={ex.id} value={ex.id}>
                         [{ex.code}] {ex.title} — {ex.classLevel} ({ex.folderName || 'General'})
                       </option>
@@ -1882,7 +2490,10 @@ export const ExamsView: React.FC = () => {
                   </label>
                   <select
                     value={qClassLevel}
-                    onChange={(e) => setQClassLevel(e.target.value as typeof qClassLevel)}
+                    onChange={(e) => {
+                      setQClassLevel(e.target.value as typeof qClassLevel);
+                      setQIsDirty(true);
+                    }}
                     className="w-full px-2.5 py-2 text-xs border border-[#E2E8F0] rounded-lg bg-white focus:outline-none focus:border-[#2563EB]"
                   >
                     <option value="Class 11th">Class 11th</option>
@@ -1896,7 +2507,10 @@ export const ExamsView: React.FC = () => {
                   </label>
                   <select
                     value={qSubject}
-                    onChange={(e) => setQSubject(e.target.value)}
+                    onChange={(e) => {
+                      setQSubject(e.target.value);
+                      setQIsDirty(true);
+                    }}
                     className="w-full px-2.5 py-2 text-xs border border-[#E2E8F0] rounded-lg bg-white focus:outline-none focus:border-[#2563EB]"
                   >
                     {QUESTION_SUBJECT_OPTIONS.map((opt) => (
@@ -1908,267 +2522,509 @@ export const ExamsView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Question text */}
-              <div>
-                <label className="block text-xs font-semibold text-[#0F172A] mb-1.5">
-                  Question text (optional if problem is in image)
-                </label>
-                <textarea
-                  rows={2}
-                  value={qText}
-                  onChange={(e) => setQText(e.target.value)}
-                  placeholder="Type the question (or upload an image below)"
-                  className="w-full px-3 py-2 text-sm border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#2563EB]"
-                />
-              </div>
+              {/* Mode Switcher: Single Question (Q#) vs Bulk Upload Images (Fast) */}
+              {!qEditingId && (
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQModalMode('single');
+                      setQError('');
+                    }}
+                    className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg border transition-colors ${
+                      qModalMode === 'single'
+                        ? 'bg-[#0032A0] text-white border-[#0032A0]'
+                        : 'bg-white text-slate-700 border-[#E2E8F0] hover:bg-slate-50'
+                    }`}
+                  >
+                    Single Question (Q{qTargetExamQuestionsCount + 1})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQModalMode('bulk');
+                      setQError('');
+                    }}
+                    className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-lg border transition-colors ${
+                      qModalMode === 'bulk'
+                        ? 'bg-[#059669] text-white border-[#059669]'
+                        : 'bg-white text-[#059669] border-emerald-300 hover:bg-emerald-50'
+                    }`}
+                  >
+                    <ImagePlus className="w-3.5 h-3.5" />
+                    Bulk Upload Images (Fast{bulkImages.length > 0 ? ` · ${bulkImages.length}` : ''})
+                  </button>
+                </div>
+              )}
 
-              {/* Question Image / Diagram Dropzone + Ctrl+V */}
-              <div>
-                <label className="block text-xs font-semibold text-[#0F172A] mb-1.5">
-                  Question Image / Diagram
-                </label>
-                <div
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    setQDragOver(true);
-                  }}
-                  onDragLeave={() => setQDragOver(false)}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    setQDragOver(false);
-                    const file = e.dataTransfer.files?.[0];
-                    if (file) void handleUploadQuestionImageFile(file);
-                  }}
-                  className={`border-2 border-dashed rounded-xl p-5 text-center transition-colors ${
-                    qDragOver
-                      ? 'border-[#0032A0] bg-blue-50/50'
-                      : 'border-[#CBD5E1] hover:border-[#2563EB] bg-white'
-                  }`}
-                >
-                  {qUploadingImage ? (
-                    <p className="text-xs font-mono text-[#0032A0]">Uploading image...</p>
-                  ) : qImageUrl ? (
+              {qModalMode === 'bulk' && !qEditingId ? (
+                <div className="space-y-4">
+                  {/* Green Dashed Multi-Image Dropzone */}
+                  <div
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setBulkDragOver(true);
+                    }}
+                    onDragLeave={() => setBulkDragOver(false)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setBulkDragOver(false);
+                      if (e.dataTransfer.files?.length) {
+                        handleAddBulkImageFiles(e.dataTransfer.files);
+                      }
+                    }}
+                    onClick={() => bulkUploadInputRef.current?.click()}
+                    className={`border-2 border-dashed rounded-xl px-4 py-6 text-center cursor-pointer transition-colors ${
+                      bulkDragOver
+                        ? 'border-emerald-600 bg-emerald-50'
+                        : 'border-emerald-400 hover:border-emerald-500 bg-emerald-50/15 hover:bg-emerald-50/35'
+                    }`}
+                  >
+                    <input
+                      ref={bulkUploadInputRef}
+                      type="file"
+                      multiple
+                      accept="image/png,image/jpeg,image/webp,image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        if (e.target.files?.length) {
+                          handleAddBulkImageFiles(e.target.files);
+                        }
+                        e.currentTarget.value = '';
+                      }}
+                    />
+                    <Upload className="w-6 h-6 text-[#059669] mx-auto mb-2" />
+                    <p className="text-xs font-bold text-[#0F172A]">
+                      Drop or Click to Select 10–100 Question Images at Once
+                    </p>
+                    <p className="text-[11px] font-medium text-[#059669] mt-1">
+                      Auto-sorted in numeric order (1.png, 2.png, ... 50.png) · Instant batch attach + Cloud Sync
+                    </p>
+                  </div>
+
+                  {/* Quick Answer Key Paste + Scrollable Prepared List */}
+                  {bulkImages.length > 0 && (
                     <div className="space-y-3">
-                      <img
-                        src={qImageUrl}
-                        alt="Question Diagram Preview"
-                        className="max-h-44 mx-auto rounded-lg border border-[#E2E8F0] object-contain"
-                      />
-                      <div className="flex items-center justify-center gap-3 text-xs">
-                        <label className="font-semibold text-[#0032A0] underline cursor-pointer">
-                          Replace image
+                      <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
+                        <div className="relative flex-1 min-w-[200px]">
+                          <KeyRound className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                           <input
-                            type="file"
-                            accept="image/png,image/jpeg,image/webp"
-                            className="hidden"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (file) void handleUploadQuestionImageFile(file);
-                            }}
+                            type="text"
+                            value={bulkKeyPaste}
+                            onChange={(e) => setBulkKeyPaste(e.target.value)}
+                            placeholder="Quick Answer Key Paste: A,B,C,D,A... or 1.A 2.B 3.C"
+                            className="w-full pl-8 pr-3 py-2 text-xs font-mono border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#0032A0]"
                           />
-                        </label>
+                        </div>
                         <button
                           type="button"
-                          onClick={() => setQImageUrl('')}
-                          className="font-semibold text-red-600 hover:underline"
+                          onClick={handleApplyBulkAnswerKeys}
+                          className="px-4 py-2 text-xs font-semibold bg-[#0032A0] hover:bg-[#00257a] text-white rounded-lg shrink-0"
                         >
-                          Remove
+                          Apply Keys
                         </button>
                       </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-1.5">
-                      <Upload className="w-5 h-5 text-[#2563EB] mx-auto" />
-                      <p className="text-xs text-slate-600">
-                        Drag &amp; drop or{' '}
-                        <label className="text-[#0032A0] font-semibold underline cursor-pointer">
-                          browse question image (PNG, JPG, JPEG, WebP)
-                          <input
-                            type="file"
-                            accept="image/png,image/jpeg,image/webp"
-                            className="hidden"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (file) void handleUploadQuestionImageFile(file);
-                            }}
-                          />
-                        </label>
-                      </p>
-                      <p className="text-[11px] text-slate-400">
-                        Tip: You can also press Ctrl+V anywhere inside this dialog to paste a screenshot.
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
 
-              {/* Question Type */}
-              <div>
-                <label className="block text-xs font-semibold text-[#0F172A] mb-1.5">
-                  Question type
-                </label>
-                <select
-                  value={qType}
-                  onChange={(e) => {
-                    const nextType = e.target.value as QuestionType;
-                    setQType(nextType);
-                    if (nextType === 'NUMERICAL' || nextType === 'INTEGER') {
-                      setQCorrectAnswer('');
-                    } else if (!['A', 'B', 'C', 'D'].includes(qCorrectAnswer)) {
-                      setQCorrectAnswer('A');
-                    }
-                  }}
-                  className="w-full px-3 py-2 text-sm border border-[#E2E8F0] rounded-lg bg-white focus:outline-none focus:border-[#2563EB]"
-                >
-                  <option value="SINGLE_MCQ">MCQ — Single</option>
-                  <option value="MULTI_MCQ">MCQ — Multiple</option>
-                  <option value="NUMERICAL">Numerical</option>
-                  <option value="INTEGER">Integer</option>
-                  <option value="IMAGE_BASED">Image Based</option>
-                </select>
-              </div>
-
-              {/* Correct Answer Key */}
-              <div className="space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-[#0F172A]">Correct Answer Key</label>
-                  {(qType === 'SINGLE_MCQ' || qType === 'MULTI_MCQ' || qType === 'IMAGE_BASED') && (
-                    <button
-                      type="button"
-                      onClick={() => setShowOptionTexts((v) => !v)}
-                      className="text-xs font-semibold text-[#0032A0] hover:underline"
-                    >
-                      {showOptionTexts ? 'Hide Option Text' : '+ Edit Option Text (Optional)'}
-                    </button>
-                  )}
-                </div>
-
-                {qType === 'SINGLE_MCQ' || qType === 'MULTI_MCQ' || qType === 'IMAGE_BASED' ? (
-                  <>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                      {(['A', 'B', 'C', 'D'] as const).map((letter) => {
-                        const selected =
-                          qType === 'MULTI_MCQ'
-                            ? qCorrectAnswer
-                                .split(',')
-                                .map((s) => s.trim())
-                                .includes(letter)
-                            : qCorrectAnswer === letter;
-                        return (
-                          <button
-                            key={letter}
-                            type="button"
-                            onClick={() => toggleAnswerKeyOption(letter)}
-                            className={`py-2.5 rounded-lg border font-display font-bold text-sm transition-colors ${
-                              selected
-                                ? 'bg-[#0032A0] text-white border-[#0032A0]'
-                                : 'bg-white text-[#0F172A] border-[#E2E8F0] hover:bg-slate-50'
-                            }`}
+                      <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+                        {bulkImages.map((item, idx) => (
+                          <div
+                            key={item.id}
+                            className="flex items-center gap-3 p-2.5 bg-white border border-[#E2E8F0] rounded-lg"
                           >
-                            {letter}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    {showOptionTexts && (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
-                        {qOptions.map((opt, idx) => (
-                          <input
-                            key={opt.id}
-                            type="text"
-                            value={opt.text}
-                            onChange={(e) => {
-                              const next = [...qOptions];
-                              next[idx] = { ...opt, text: e.target.value };
-                              setQOptions(next);
-                            }}
-                            placeholder={`Option ${opt.id} text (optional, KaTeX supported)`}
-                            className="px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#2563EB]"
-                          />
+                            <span className="text-xs font-mono font-bold text-[#0032A0] w-8 shrink-0">
+                              Q{idx + 1}
+                            </span>
+                            <img
+                              src={item.previewUrl}
+                              alt={item.fileName}
+                              className="w-11 h-9 object-contain bg-slate-50 border border-[#E2E8F0] rounded shrink-0"
+                            />
+                            <span className="text-xs font-mono text-slate-700 truncate flex-1 min-w-0">
+                              {item.fileName}
+                            </span>
+                            <div className="flex items-center gap-1 shrink-0">
+                              {(['A', 'B', 'C', 'D'] as const).map((letter) => {
+                                const active = item.answerKey === letter;
+                                return (
+                                  <button
+                                    key={letter}
+                                    type="button"
+                                    onClick={() => handleSetBulkItemAnswer(item.id, letter)}
+                                    className={`w-7 h-7 text-xs font-mono font-bold rounded border transition-colors ${
+                                      active
+                                        ? 'bg-[#059669] text-white border-[#059669]'
+                                        : 'bg-white text-slate-600 border-[#E2E8F0] hover:bg-slate-50'
+                                    }`}
+                                  >
+                                    {letter}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveBulkImage(item.id)}
+                              className="p-1.5 text-red-500 hover:bg-red-50 rounded shrink-0"
+                              aria-label={`Remove ${item.fileName}`}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         ))}
                       </div>
+                    </div>
+                  )}
+
+                  {bulkStatusText && (
+                    <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-lg text-xs font-mono text-[#0032A0]">
+                      {bulkStatusText}
+                    </div>
+                  )}
+
+                  {qError && (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 space-y-2">
+                      <p className="font-medium leading-relaxed">{qError}</p>
+                      {needsCloudAuth && (
+                        <button
+                          type="button"
+                          disabled={linkingCloud}
+                          onClick={handleInlineLinkCloud}
+                          className="px-3 py-1.5 text-xs font-semibold bg-[#0032A0] hover:bg-[#00257a] text-white rounded-md disabled:opacity-60"
+                        >
+                          {linkingCloud ? 'Linking Cloud Account...' : 'Link Cloud Account Now'}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <>
+                  {/* Question text */}
+                  <div>
+                    <label className="block text-xs font-semibold text-[#0F172A] mb-1.5">
+                      Question text (optional if problem is in image)
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={qText}
+                      onChange={(e) => {
+                        setQText(e.target.value);
+                        setQIsDirty(true);
+                        setQSavedBadge('');
+                      }}
+                      placeholder="Type the question (or upload an image below)"
+                      className="w-full px-3 py-2 text-sm border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#2563EB]"
+                    />
+                  </div>
+
+                  {/* Question Image / Diagram Dropzone + Ctrl+V */}
+                  <div>
+                    <label className="block text-xs font-semibold text-[#0F172A] mb-1.5">
+                      Question Image / Diagram
+                    </label>
+                    <div
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        setQDragOver(true);
+                      }}
+                      onDragLeave={() => setQDragOver(false)}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setQDragOver(false);
+                        const file = e.dataTransfer.files?.[0];
+                        if (file) void handleUploadQuestionImageFile(file);
+                      }}
+                      className={`border-2 border-dashed rounded-xl p-5 text-center transition-colors ${
+                        qDragOver
+                          ? 'border-[#0032A0] bg-blue-50/50'
+                          : 'border-[#CBD5E1] hover:border-[#2563EB] bg-white'
+                      }`}
+                    >
+                      {qUploadingImage ? (
+                        <p className="text-xs font-mono text-[#0032A0]">Uploading image...</p>
+                      ) : qImageUrl ? (
+                        <div className="space-y-3">
+                          <img
+                            src={qImageUrl}
+                            alt="Question Diagram Preview"
+                            className="max-h-44 mx-auto rounded-lg border border-[#E2E8F0] object-contain"
+                          />
+                          <div className="flex items-center justify-center gap-3 text-xs">
+                            <label className="font-semibold text-[#0032A0] underline cursor-pointer">
+                              Replace image
+                              <input
+                                ref={qReplaceInputRef}
+                                type="file"
+                                accept="image/png,image/jpeg,image/webp"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  e.currentTarget.value = '';
+                                  if (file) void handleUploadQuestionImageFile(file);
+                                }}
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setQImageUrl('');
+                                setQIsDirty(true);
+                                setQSavedBadge('');
+                              }}
+                              className="font-semibold text-red-600 hover:underline"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5">
+                          <Upload className="w-5 h-5 text-[#2563EB] mx-auto" />
+                          <p className="text-xs text-slate-600">
+                            Drag &amp; drop or{' '}
+                            <label className="text-[#0032A0] font-semibold underline cursor-pointer">
+                              browse question image (PNG, JPG, JPEG, WebP)
+                              <input
+                                ref={qUploadInputRef}
+                                type="file"
+                                accept="image/png,image/jpeg,image/webp"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  e.currentTarget.value = '';
+                                  if (file) void handleUploadQuestionImageFile(file);
+                                }}
+                              />
+                            </label>
+                          </p>
+                          <p className="text-[11px] text-slate-400">
+                            Tip: You can also press Ctrl+V anywhere inside this dialog to paste a screenshot.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Question Type */}
+                  <div>
+                    <label className="block text-xs font-semibold text-[#0F172A] mb-1.5">
+                      Question type
+                    </label>
+                    <select
+                      value={qType}
+                      onChange={(e) => {
+                        const nextType = e.target.value as QuestionType;
+                        setQType(nextType);
+                        setQIsDirty(true);
+                        setQSavedBadge('');
+                        if (nextType === 'NUMERICAL' || nextType === 'INTEGER') {
+                          setQCorrectAnswer('');
+                        } else if (!['A', 'B', 'C', 'D'].includes(qCorrectAnswer)) {
+                          setQCorrectAnswer('A');
+                        }
+                      }}
+                      className="w-full px-3 py-2 text-sm border border-[#E2E8F0] rounded-lg bg-white focus:outline-none focus:border-[#2563EB]"
+                    >
+                      <option value="SINGLE_MCQ">MCQ — Single</option>
+                      <option value="MULTI_MCQ">MCQ — Multiple</option>
+                      <option value="NUMERICAL">Numerical</option>
+                      <option value="INTEGER">Integer</option>
+                      <option value="IMAGE_BASED">Image Based</option>
+                    </select>
+                  </div>
+
+                  {/* Correct Answer Key */}
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-semibold text-[#0F172A]">Correct Answer Key</label>
+                      {(qType === 'SINGLE_MCQ' || qType === 'MULTI_MCQ' || qType === 'IMAGE_BASED') && (
+                        <button
+                          type="button"
+                          onClick={() => setShowOptionTexts((v) => !v)}
+                          className="text-xs font-semibold text-[#0032A0] hover:underline"
+                        >
+                          {showOptionTexts ? 'Hide Option Text' : '+ Edit Option Text (Optional)'}
+                        </button>
+                      )}
+                    </div>
+
+                    {qType === 'SINGLE_MCQ' || qType === 'MULTI_MCQ' || qType === 'IMAGE_BASED' ? (
+                      <>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                          {(['A', 'B', 'C', 'D'] as const).map((letter) => {
+                            const selected =
+                              qType === 'MULTI_MCQ'
+                                ? qCorrectAnswer
+                                    .split(',')
+                                    .map((s) => s.trim())
+                                    .includes(letter)
+                                : qCorrectAnswer === letter;
+                            return (
+                              <button
+                                key={letter}
+                                type="button"
+                                onClick={() => toggleAnswerKeyOption(letter)}
+                                className={`py-2.5 rounded-lg border font-display font-bold text-sm transition-colors ${
+                                  selected
+                                    ? 'bg-[#0032A0] text-white border-[#0032A0]'
+                                    : 'bg-white text-[#0F172A] border-[#E2E8F0] hover:bg-slate-50'
+                                }`}
+                              >
+                                {letter}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {showOptionTexts && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                            {qOptions.map((opt, idx) => (
+                              <input
+                                key={opt.id}
+                                type="text"
+                                value={opt.text}
+                                onChange={(e) => {
+                                  const next = [...qOptions];
+                                  next[idx] = { ...opt, text: e.target.value };
+                                  setQOptions(next);
+                                  setQIsDirty(true);
+                                  setQSavedBadge('');
+                                }}
+                                placeholder={`Option ${opt.id} text (optional, KaTeX supported)`}
+                                className="px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#2563EB]"
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <input
+                        type="text"
+                        value={qCorrectAnswer}
+                        onChange={(e) => {
+                          setQCorrectAnswer(e.target.value);
+                          setQIsDirty(true);
+                          setQSavedBadge('');
+                        }}
+                        placeholder={`Enter exact ${qType === 'INTEGER' ? 'integer' : 'numerical'} answer key`}
+                        className="w-full px-3 py-2 text-sm font-mono border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#2563EB]"
+                      />
                     )}
-                  </>
-                ) : (
-                  <input
-                    type="text"
-                    value={qCorrectAnswer}
-                    onChange={(e) => setQCorrectAnswer(e.target.value)}
-                    placeholder={`Enter exact ${qType === 'INTEGER' ? 'integer' : 'numerical'} answer key`}
-                    className="w-full px-3 py-2 text-sm font-mono border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#2563EB]"
-                  />
-                )}
-              </div>
+                  </div>
 
-              {/* Marks (+) & Negative (-) */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-[#0F172A] mb-1.5">Marks (+)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    step="0.5"
-                    value={qPosMarks}
-                    onChange={(e) => setQPosMarks(Number(e.target.value))}
-                    className="w-full px-3 py-2 text-sm font-mono border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#2563EB]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-[#0F172A] mb-1.5">Negative (-)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    step="0.25"
-                    value={qNegMarks}
-                    onChange={(e) => setQNegMarks(Number(e.target.value))}
-                    className="w-full px-3 py-2 text-sm font-mono border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#2563EB]"
-                  />
-                </div>
-              </div>
+                  {/* Marks (+) & Negative (-) */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-[#0F172A] mb-1.5">Marks (+)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.5"
+                        value={qPosMarks}
+                        onChange={(e) => {
+                          setQPosMarks(Number(e.target.value));
+                          setQIsDirty(true);
+                          setQSavedBadge('');
+                        }}
+                        className="w-full px-3 py-2 text-sm font-mono border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#2563EB]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-[#0F172A] mb-1.5">Negative (-)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.25"
+                        value={qNegMarks}
+                        onChange={(e) => {
+                          setQNegMarks(Number(e.target.value));
+                          setQIsDirty(true);
+                          setQSavedBadge('');
+                        }}
+                        className="w-full px-3 py-2 text-sm font-mono border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#2563EB]"
+                      />
+                    </div>
+                  </div>
 
-              {qError && (
-                <div className="p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
-                  {qError}
-                </div>
+                  {qError && (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 space-y-2">
+                      <p className="font-medium leading-relaxed">{qError}</p>
+                      {needsCloudAuth && (
+                        <button
+                          type="button"
+                          disabled={linkingCloud}
+                          onClick={handleInlineLinkCloud}
+                          className="px-3 py-1.5 text-xs font-semibold bg-[#0032A0] hover:bg-[#00257a] text-white rounded-md disabled:opacity-60"
+                        >
+                          {linkingCloud ? 'Linking Cloud Account...' : 'Link Cloud Account Now'}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
-            {/* Footer Action Buttons (Matches Screenshot 2) */}
+            {/* Footer Action Buttons */}
             <div className="flex flex-wrap items-center justify-end gap-2 px-4 sm:px-6 py-3.5 border-t border-[#E2E8F0] bg-slate-50/70 shrink-0">
-              <button
-                type="button"
-                disabled={qSaving || qUploadingImage}
-                onClick={handleQuestionSave}
-                className="px-4 py-2 text-xs font-semibold border border-[#E2E8F0] bg-white hover:bg-slate-50 text-slate-700 rounded-lg disabled:opacity-50"
-              >
-                Save
-              </button>
-              <button
-                type="button"
-                disabled={qSaving || qUploadingImage}
-                onClick={handleQuestionSaveAndNext}
-                className="px-4 py-2 text-xs font-semibold border border-[#E2E8F0] bg-white hover:bg-slate-50 text-[#0F172A] rounded-lg disabled:opacity-50"
-              >
-                + Save &amp; Add Next
-              </button>
-              <button
-                type="button"
-                disabled={qSaving || qUploadingImage}
-                onClick={handleQuestionFinishAndShare}
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-[#059669] hover:bg-emerald-700 text-white rounded-lg disabled:opacity-50"
-              >
-                <Share2 className="w-3.5 h-3.5" />
-                Finish &amp; Share Link
-              </button>
-              <button
-                type="button"
-                disabled={qSaving || qUploadingImage}
-                onClick={handleQuestionFinish}
-                className="px-5 py-2 text-xs font-semibold bg-[#0032A0] hover:bg-[#00257a] text-white rounded-lg disabled:opacity-50"
-              >
-                Finish
-              </button>
+              {qModalMode === 'bulk' && !qEditingId ? (
+                <>
+                  <button
+                    type="button"
+                    disabled={qSaving || bulkImages.length === 0}
+                    onClick={() => void handleCommitBulkImages(true)}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-[#059669] hover:bg-emerald-700 text-white rounded-lg disabled:opacity-50"
+                  >
+                    <Share2 className="w-3.5 h-3.5" />
+                    Attach All {bulkImages.length} &amp; Share Link
+                  </button>
+                  <button
+                    type="button"
+                    disabled={qSaving || bulkImages.length === 0}
+                    onClick={() => void handleCommitBulkImages(false)}
+                    className="inline-flex items-center gap-1.5 px-5 py-2 text-xs font-semibold bg-[#0032A0] hover:bg-[#00257a] text-white rounded-lg disabled:opacity-50"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    {qSaving ? 'Syncing...' : `Attach All ${bulkImages.length} Images & Sync`}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    disabled={qSaving || qUploadingImage}
+                    onClick={handleQuestionSave}
+                    className="px-4 py-2 text-xs font-semibold border border-[#E2E8F0] bg-white hover:bg-slate-50 text-slate-700 rounded-lg disabled:opacity-50"
+                  >
+                    {qSaving ? 'Saving...' : qEditingId ? 'Save Update' : 'Save'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={qSaving || qUploadingImage}
+                    onClick={handleQuestionSaveAndNext}
+                    className="px-4 py-2 text-xs font-semibold border border-[#E2E8F0] bg-white hover:bg-slate-50 text-[#0F172A] rounded-lg disabled:opacity-50"
+                  >
+                    {qSaving ? 'Saving...' : '+ Save & Add Next'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={qSaving || qUploadingImage}
+                    onClick={handleQuestionFinishAndShare}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-[#059669] hover:bg-emerald-700 text-white rounded-lg disabled:opacity-50"
+                  >
+                    <Share2 className="w-3.5 h-3.5" />
+                    Finish &amp; Share Link
+                  </button>
+                  <button
+                    type="button"
+                    disabled={qSaving || qUploadingImage}
+                    onClick={handleQuestionFinish}
+                    className="px-5 py-2 text-xs font-semibold bg-[#0032A0] hover:bg-[#00257a] text-white rounded-lg disabled:opacity-50"
+                  >
+                    Finish
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>

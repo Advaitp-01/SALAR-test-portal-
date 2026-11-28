@@ -25,6 +25,98 @@ export type StudentModule =
   | 'purchases'
   | 'profile';
 
+export interface FrontendSubjectItem {
+  id: string;
+  name: string;
+  tagline: string;
+  description: string;
+  topics: string;
+}
+
+export interface FrontendHighlightItem {
+  value: string;
+  label: string;
+}
+
+export interface FrontendTitleDescItem {
+  title: string;
+  description: string;
+}
+
+export interface FrontendCampusItem {
+  title: string;
+  description: string;
+  imageUrl?: string;
+}
+
+export interface FrontendPerformerItem {
+  name: string;
+  exam: string;
+  score: string;
+  imageUrl?: string;
+}
+
+export interface FrontendGpatItem {
+  title: string;
+  classLevel: string;
+  code: string;
+  duration: string;
+}
+
+export interface FrontendSectionVisibility {
+  showAnnouncement: boolean;
+  showHighlights: boolean;
+  showSubjects: boolean;
+  showAbout: boolean;
+  showApproach: boolean;
+  showFeatures: boolean;
+  showCampus: boolean;
+  showPerformers: boolean;
+  showCourses: boolean;
+  showTestSeries: boolean;
+  showLiveExams: boolean;
+  showGpat: boolean;
+  showTestimonial: boolean;
+  showContact: boolean;
+}
+
+export interface FrontendCustomizationConfig {
+  announcementEnabled: boolean;
+  announcementText: string;
+  announcementCtaLabel: string;
+  establishedYear: string;
+  founderName: string;
+  motto: string;
+  aboutHeading: string;
+  aboutBody: string;
+  officeHours: string;
+  highlights: FrontendHighlightItem[];
+  subjects: FrontendSubjectItem[];
+  approachSteps: FrontendTitleDescItem[];
+  features: FrontendTitleDescItem[];
+  campusFacilities: FrontendCampusItem[];
+  performers: FrontendPerformerItem[];
+  testimonial: {
+    name: string;
+    role: string;
+    quote: string;
+  };
+  gpatSchedules: FrontendGpatItem[];
+  sectionHeadings: {
+    subjectsHeading: string;
+    subjectsSubheading: string;
+    coursesHeading: string;
+    coursesSubheading: string;
+    testSeriesHeading: string;
+    testSeriesSubheading: string;
+    liveExamsHeading: string;
+    performersHeading: string;
+    campusHeading: string;
+  };
+  footerNote: string;
+  sectionVisibility: FrontendSectionVisibility;
+}
+
 export interface InstituteSettings {
   id?: string;
   instituteName: string;
@@ -65,6 +157,7 @@ export interface InstituteSettings {
     enableEmailNotifications: boolean;
     enableWhatsAppNotifications: boolean;
     compactTables: boolean;
+    frontend?: Partial<FrontendCustomizationConfig>;
   };
   updatedAt?: string;
 }
@@ -77,7 +170,7 @@ export interface StudentProfile {
   mobile?: string;
   whatsapp?: string;
   classLevel?: 'Class 11th' | 'Class 12th' | 'Dropper / Repeater';
-  targetExam?: 'JEE Main' | 'JEE Advanced' | 'MHT-CET' | 'Boards + CET' | 'JEE Main + Advanced';
+  targetExam?: 'JEE Main' | 'JEE Advanced' | 'MHT-CET' | 'NEET' | 'Boards + CET' | 'JEE Main + Advanced' | 'PCMB Foundation';
   rollNumber?: string;
   username?: string;
   enrollmentId?: string;
@@ -164,9 +257,10 @@ export interface Question {
   negativeMarks: number;
   difficulty: 'EASY' | 'MEDIUM' | 'HARD';
   classLevel: 'Class 11th' | 'Class 12th';
+  subject?: string;
   chapter?: string;
   topic?: string;
-  examCategory: 'JEE Main' | 'JEE Advanced' | 'MHT-CET';
+  examCategory: 'JEE Main' | 'JEE Advanced' | 'MHT-CET' | 'NEET' | 'Foundation';
   createdAt?: string;
   updatedAt?: string;
 }
@@ -176,7 +270,7 @@ export interface Exam {
   title: string;
   code: string;
   classLevel: 'Class 11th' | 'Class 12th' | 'All Classes';
-  target: 'JEE Main' | 'JEE Advanced' | 'MHT-CET' | 'NEET';
+  target: 'JEE Main' | 'JEE Advanced' | 'MHT-CET' | 'NEET' | 'PCMB Foundation';
   subject?: string;
   examTag?: string;
   folderName?: string;
@@ -360,13 +454,17 @@ export interface Course {
   id: string;
   name: string;
   description?: string;
-  category: 'JEE Main' | 'JEE Advanced' | 'MHT-CET' | 'Foundation';
+  category: 'JEE Main' | 'JEE Advanced' | 'MHT-CET' | 'NEET' | 'Foundation';
   classLevel?: string;
+  subjectTag?: string;
+  duration?: string;
+  targetExams?: string;
   price: number;
   thumbnailUrl?: string;
   status: 'PUBLISHED' | 'DRAFT';
   enrolledCount?: number;
   modules?: CourseModule[];
+  examIds?: string[];
   createdAt?: string;
   updatedAt?: string;
 }
@@ -378,7 +476,22 @@ export interface TestSeries {
   price: number;
   mockTestCount: number;
   classLevel?: string;
-  examCategory: 'JEE Main Mathematics' | 'JEE Advanced Mathematics' | 'MHT-CET Mathematics';
+  examCategory:
+    | 'IIT-JEE'
+    | 'JEE Main'
+    | 'JEE Advanced'
+    | 'MHT-CET'
+    | 'NEET'
+    | 'G-PAT'
+    | 'Foundation'
+    | 'JEE Main PCMB'
+    | 'JEE Advanced PCMB'
+    | 'MHT-CET PCMB'
+    | 'NEET PCB'
+    | 'PCMB Foundation'
+    | 'JEE Main Mathematics'
+    | 'JEE Advanced Mathematics'
+    | 'MHT-CET Mathematics';
   status: 'PUBLISHED' | 'DRAFT';
   examIds?: string[];
   createdAt?: string;

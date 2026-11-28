@@ -214,6 +214,46 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ activeModule, onSelect
           </button>
         </header>
 
+        {/* Trial Plan Status Banner */}
+        {tenantContext?.isTrial && (() => {
+          const daysLeft =
+            typeof tenantContext.trialDaysRemaining === 'number'
+              ? tenantContext.trialDaysRemaining
+              : tenantContext.licenseExpirationDate
+              ? Math.ceil((new Date(tenantContext.licenseExpirationDate).getTime() - Date.now()) / 86400000)
+              : 0;
+          return (
+            <div className="bg-blue-50/90 border-b border-blue-200 px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-[#0F172A]">
+                <span className="font-mono font-bold text-[#0032A0]">TRIAL PLAN</span>
+                <span className="text-slate-400" aria-hidden="true">·</span>
+                <span className="font-semibold">{tenantContext.planCode || 'PRO'} Tier</span>
+                <span className="text-slate-400" aria-hidden="true">·</span>
+                <span className="font-mono tabular-nums">
+                  {(tenantContext.licenseStartDate || '').slice(0, 10) || 'Active'} →{' '}
+                  {(tenantContext.licenseExpirationDate || '').slice(0, 10) || '—'}
+                </span>
+                <span className="text-slate-400" aria-hidden="true">·</span>
+                <span className={`font-mono font-semibold tabular-nums ${daysLeft <= 0 ? 'text-red-700' : 'text-emerald-700'}`}>
+                  {daysLeft > 0 ? `${daysLeft}d remaining` : 'Expired'}
+                </span>
+                {tenantContext.trialNotes && (
+                  <>
+                    <span className="text-slate-400" aria-hidden="true">·</span>
+                    <span className="text-slate-600">{tenantContext.trialNotes}</span>
+                  </>
+                )}
+              </div>
+              <a
+                href={`/pay?org=${encodeURIComponent(tenantContext.organizationId || '')}`}
+                className="px-3 py-1.5 text-xs font-semibold text-white bg-[#0032A0] hover:bg-[#00257a] rounded-lg whitespace-nowrap shrink-0"
+              >
+                Upgrade / Billing
+              </a>
+            </div>
+          );
+        })()}
+
         {/* Optional / Required one-time cloud link if authenticated only via server passcode on primary root portal */}
         {!firebaseUser && !isIsolatedTenant && (
           <div className="bg-amber-50/80 border-b border-amber-200 px-4 sm:px-6 py-2.5 space-y-2">
@@ -224,8 +264,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ activeModule, onSelect
                   {cloudAuthNeeded
                     ? 'Cloud Firestore requires Google authorization to sync Students, Exams, Attempts, and Payments. '
                     : 'Passcode session active. '}
-                  Link your authorized admin account (<span className="font-mono font-semibold">gurukulclassestech@gmail.com</span> or{' '}
-                  <span className="font-mono font-semibold">advaitp38@gmail.com</span>) once for live cloud sync.
+                  Link your authorized admin account (<span className="font-mono font-semibold">gurukulclassestech@gmail.com</span>) once for live cloud sync.
                 </p>
               </div>
               <button

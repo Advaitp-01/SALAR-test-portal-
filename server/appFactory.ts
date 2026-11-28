@@ -462,7 +462,7 @@ export function createApiApp(): Express {
         typeof req.body?.defaultExamCategory === 'string' ? req.body.defaultExamCategory : 'JEE Main';
 
       if (!fileBase64 && !rawText.trim()) {
-        res.status(400).json({ error: 'Provide an uploaded image/PDF or raw mathematical text for extraction.' });
+        res.status(400).json({ error: 'Provide an uploaded image/PDF or raw PCMB text for extraction.' });
         return;
       }
 
@@ -475,10 +475,10 @@ export function createApiApp(): Express {
         },
       });
 
-      const systemInstruction = `You are a precision Mathematics OCR & Exam Question Extraction Engine for JEE Main, JEE Advanced, and MHT-CET.
+      const systemInstruction = `You are a precision PCMB (Physics, Chemistry, Mathematics & Biology) OCR & Exam Question Extraction Engine for IIT-JEE, NEET, and MHT-CET.
 CRITICAL RULES:
-1. Preserve ALL mathematical symbols and expressions faithfully: √, π, ∫, Σ, ∞, θ, α, β, matrices, determinants, fractions, exponents, and subscripts.
-2. Wrap inline LaTeX math in $...$ and display equations in $$...$$ so KaTeX renders them accurately, OR preserve Unicode mathematical glyphs verbatim. NEVER silently alter numbers, signs, limits of integration, or mathematical expressions.
+1. Preserve ALL scientific and mathematical notation faithfully: √, π, ∫, Σ, ∞, θ, α, β, chemical formulas (H2O, SO4^{2-}), reaction arrows (→, ⇌), thermodynamic symbols (ΔH, ΔG), vector notation, units (m/s², Ω, mol/L), matrices, determinants, fractions, exponents, and subscripts.
+2. Wrap inline LaTeX formulas in $...$ and display equations in $$...$$ so KaTeX renders them accurately, OR preserve Unicode mathematical glyphs verbatim. NEVER silently alter numbers, signs, limits, coefficients, or biological terminology.
 3. Extract each question into the structured JSON schema with options A, B, C, D (empty array for NUMERICAL or INTEGER types).
 4. Set questionType to one of: SINGLE_MCQ, MULTI_MCQ, NUMERICAL, INTEGER, IMAGE_BASED.
 5. Do not invent fake answers if not present in the source; if an answer key is not visible, leave correctAnswer empty string "" so the faculty reviewer can verify and fill it.`;
@@ -495,8 +495,8 @@ CRITICAL RULES:
       }
       parts.push({
         text: rawText.trim()
-          ? `Extract all Mathematics questions from the attached source and/or text below (default class: ${defaultClass}, target: ${defaultExamCategory}):\n\n${rawText}`
-          : `Extract all Mathematics questions from this uploaded document/image accurately (default class: ${defaultClass}, target: ${defaultExamCategory}). Preserve all integrals, matrices, square roots, trigonometric expressions, fractions, and symbols without modifying them.`,
+          ? `Extract all PCMB (Physics, Chemistry, Mathematics & Biology) questions from the attached source and/or text below (default class: ${defaultClass}, target: ${defaultExamCategory}):\n\n${rawText}`
+          : `Extract all PCMB (Physics, Chemistry, Mathematics & Biology) questions from this uploaded document/image accurately (default class: ${defaultClass}, target: ${defaultExamCategory}). Preserve all equations, chemical formulas, diagrams/text expressions, integrals, matrices, square roots, and symbols without modifying them.`,
       });
 
       const response = await ai.models.generateContent({
@@ -510,8 +510,8 @@ CRITICAL RULES:
             items: {
               type: Type.OBJECT,
               properties: {
-                title: { type: Type.STRING, description: 'Short descriptive title of the math question' },
-                questionText: { type: Type.STRING, description: 'Full question text preserving math symbols and LaTeX' },
+                title: { type: Type.STRING, description: 'Short descriptive title of the PCMB question' },
+                questionText: { type: Type.STRING, description: 'Full question text preserving Physics/Chemistry/Math/Biology notation and LaTeX' },
                 questionType: {
                   type: Type.STRING,
                   description: 'SINGLE_MCQ, MULTI_MCQ, NUMERICAL, INTEGER, or IMAGE_BASED',

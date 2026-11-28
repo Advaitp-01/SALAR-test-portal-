@@ -16,6 +16,7 @@ export const StudyMaterialView: React.FC = () => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [classLevel, setClassLevel] = useState<'Class 11th' | 'Class 12th' | 'Both'>('Class 12th');
+  const [subject, setSubject] = useState('Physics');
   const [chapter, setChapter] = useState('');
   const [category, setCategory] = useState<'Notes' | 'Formula Sheets' | 'DPP' | 'PDF' | 'Practice Worksheets'>('Formula Sheets');
   const [fileUrl, setFileUrl] = useState('');
@@ -48,6 +49,7 @@ export const StudyMaterialView: React.FC = () => {
     setTitle('');
     setDescription('');
     setClassLevel('Class 12th');
+    setSubject('Physics');
     setChapter('');
     setCategory('Formula Sheets');
     setFileUrl('');
@@ -61,6 +63,7 @@ export const StudyMaterialView: React.FC = () => {
     setTitle(m.title);
     setDescription(m.description || '');
     setClassLevel(m.classLevel);
+    setSubject(m.subject || 'Physics');
     setChapter(m.chapter || '');
     setCategory(m.category);
     setFileUrl(m.fileUrl);
@@ -91,7 +94,7 @@ export const StudyMaterialView: React.FC = () => {
       title: title.trim(),
       description: description.trim(),
       classLevel,
-      subject: 'Mathematics',
+      subject: subject || 'PCMB',
       chapter: chapter.trim(),
       category,
       fileUrl,
@@ -140,7 +143,7 @@ export const StudyMaterialView: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="font-display text-2xl font-bold text-[#0F172A]">Study Material &amp; Formula Books</h1>
-          <p className="text-sm text-slate-500">Upload Mathematics notes, formula sheets, DPPs, and practice PDFs</p>
+          <p className="text-sm text-slate-500">Upload Physics, Chemistry, Mathematics &amp; Biology notes, formula sheets, DPPs, and PDFs</p>
         </div>
         <button
           type="button"
@@ -181,7 +184,7 @@ export const StudyMaterialView: React.FC = () => {
         <div className="bg-white border border-[#E2E8F0] rounded-xl p-10 text-center">
           <BookOpen className="w-10 h-10 text-slate-400 mx-auto mb-3" />
           <p className="font-display font-bold text-base text-[#0F172A]">No Study Material Uploaded</p>
-          <p className="text-xs text-slate-500 mt-1">Upload Mathematics formula sheets, DPPs, or chapter notes.</p>
+          <p className="text-xs text-slate-500 mt-1">Upload PCMB formula sheets, DPPs, or chapter notes.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
@@ -189,7 +192,9 @@ export const StudyMaterialView: React.FC = () => {
             <div key={m.id} className="bg-white border border-[#E2E8F0] rounded-xl p-5 flex flex-col justify-between gap-4">
               <div className="space-y-2.5">
                 <div className="flex items-center justify-between text-xs font-mono text-slate-500">
-                  <span className="text-[#0032A0] font-semibold">{m.category}</span>
+                  <span className="text-[#0032A0] font-semibold">
+                    {m.subject || 'PCMB'} · {m.category}
+                  </span>
                   <span>{m.classLevel}</span>
                 </div>
                 <h3 className="font-display font-bold text-base text-[#0F172A]">{m.title}</h3>
@@ -294,15 +299,31 @@ export const StudyMaterialView: React.FC = () => {
                   </select>
                 </div>
               </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Mathematics Chapter</label>
-                <input
-                  type="text"
-                  value={chapter}
-                  onChange={(e) => setChapter(e.target.value)}
-                  placeholder="e.g. Differential Equations"
-                  className="w-full px-3 py-2 text-sm border border-[#E2E8F0] rounded-lg"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Subject (PCMB)</label>
+                  <select
+                    value={subject}
+                    onChange={(e) => setSubject(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-[#E2E8F0] rounded-lg bg-white"
+                  >
+                    <option value="Physics">Physics</option>
+                    <option value="Chemistry">Chemistry</option>
+                    <option value="Mathematics">Mathematics</option>
+                    <option value="Biology">Biology</option>
+                    <option value="Combined PCMB">Combined PCMB</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Chapter / Topic</label>
+                  <input
+                    type="text"
+                    value={chapter}
+                    onChange={(e) => setChapter(e.target.value)}
+                    placeholder="e.g. Electrostatics / Genetics / Calculus"
+                    className="w-full px-3 py-2 text-sm border border-[#E2E8F0] rounded-lg"
+                  />
+                </div>
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">PDF / File Upload</label>

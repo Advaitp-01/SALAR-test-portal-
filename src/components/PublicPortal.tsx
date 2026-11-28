@@ -1,21 +1,33 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { collection, onSnapshot, query, where } from '../lib/tenantDb';
 import {
   ArrowRight,
+  Award,
   BookOpen,
+  Building2,
+  Calendar,
   CheckCircle2,
   ClipboardList,
+  Clock,
+  ExternalLink,
   Lock,
   Mail,
   MapPin,
+  MessageCircle,
   Phone,
+  Quote,
   Shield,
   UserPlus,
 } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
+import {
+  buildDefaultFrontendConfig,
+  GURUKUL_COURSES_CATALOG,
+  GURUKUL_TEST_SERIES_CATALOG,
+} from '../lib/gurukulData';
 import { formatCurrencyINR, GENERATED_ASSETS } from '../lib/portalService';
-import type { Course, TestSeries } from '../types/portal';
+import type { Course, FrontendCustomizationConfig, TestSeries } from '../types/portal';
 
 interface PublicPortalProps {
   onOpenAdminGate: () => void;
@@ -30,14 +42,50 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
   tenantOrgId,
   pendingExamCode,
 }) => {
-  const { settings, isIsolatedTenant, signInWithGoogle, signInStudentEmail, registerStudentEmail, resetPassword } =
-    useAuth();
+  const {
+    settings,
+    tenantContext,
+    isIsolatedTenant,
+    signInWithGoogle,
+    signInStudentEmail,
+    registerStudentEmail,
+    resetPassword,
+  } = useAuth();
   const displayInstituteName =
     tenantOrgId && tenantOrgId !== 'SALAR-ORG-00001' && tenantInstituteName
       ? tenantInstituteName
       : settings.instituteName;
-  const instituteInitial = (displayInstituteName.trim().charAt(0) || 'S').toUpperCase();
+  const instituteInitial = (displayInstituteName.trim().charAt(0) || 'G').toUpperCase();
   const [authTab, setAuthTab] = useState<'login' | 'register' | 'quick-join' | 'forgot'>('login');
+
+  const fe: FrontendCustomizationConfig = useMemo(() => {
+    const base = buildDefaultFrontendConfig(displayInstituteName);
+    const saved = settings.portalConfig?.frontend;
+    if (!saved) return base;
+    return {
+      ...base,
+      ...saved,
+      highlights: Array.isArray(saved.highlights) ? saved.highlights : base.highlights,
+      subjects: Array.isArray(saved.subjects) ? saved.subjects : base.subjects,
+      approachSteps: Array.isArray(saved.approachSteps) ? saved.approachSteps : base.approachSteps,
+      features: Array.isArray(saved.features) ? saved.features : base.features,
+      campusFacilities: Array.isArray(saved.campusFacilities) ? saved.campusFacilities : base.campusFacilities,
+      performers: Array.isArray(saved.performers) ? saved.performers : base.performers,
+      gpatSchedules: Array.isArray(saved.gpatSchedules) ? saved.gpatSchedules : base.gpatSchedules,
+      testimonial: {
+        ...base.testimonial,
+        ...(saved.testimonial || {}),
+      },
+      sectionHeadings: {
+        ...base.sectionHeadings,
+        ...(saved.sectionHeadings || {}),
+      },
+      sectionVisibility: {
+        ...base.sectionVisibility,
+        ...(saved.sectionVisibility || {}),
+      },
+    };
+  }, [displayInstituteName, settings.portalConfig?.frontend]);
 
   // Student auth fields (never prefilled)
   const [name, setName] = useState('');
@@ -46,14 +94,14 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
   const [mobile, setMobile] = useState('');
   const [classLevel, setClassLevel] = useState<'Class 11th' | 'Class 12th' | 'Dropper / Repeater'>('Class 12th');
   const [targetExam, setTargetExam] = useState<
-    'JEE Main' | 'JEE Advanced' | 'MHT-CET' | 'Boards + CET' | 'JEE Main + Advanced'
+    'JEE Main' | 'JEE Advanced' | 'MHT-CET' | 'NEET' | 'Boards + CET' | 'JEE Main + Advanced' | 'PCMB Foundation'
   >('JEE Main');
 
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
   const [authSuccess, setAuthSuccess] = useState('');
 
-  // Public published catalog
+  // Public published catalog from Firestore
   const [courses, setCourses] = useState<Course[]>([]);
   const [testSeries, setTestSeries] = useState<TestSeries[]>([]);
 
@@ -79,6 +127,27 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
       unsubSeries();
     };
   }, []);
+
+  const displayedCourses: Course[] =
+    courses.length > 0
+      ? courses
+      : isIsolatedTenant
+      ? []
+      : GURUKUL_COURSES_CATALOG.map((c, idx) => ({ id: `gurukul-course-${idx}`, ...c }));
+
+  const displayedSeries: TestSeries[] =
+    testSeries.length > 0
+      ? testSeries
+      : isIsolatedTenant
+      ? []
+      : GURUKUL_TEST_SERIES_CATALOG.map((ts, idx) => ({ id: `gurukul-series-${idx}`, ...ts }));
+
+  const trialDaysLeft = useMemo(() => {
+    if (!tenantContext?.isTrial) return 0;
+    if (typeof tenantContext.trialDaysRemaining === 'number') return tenantContext.trialDaysRemaining;
+    if (!tenantContext.licenseExpirationDate) return 0;
+    return Math.ceil((new Date(tenantContext.licenseExpirationDate).getTime() - Date.now()) / 86400000);
+  }, [tenantContext]);
 
   const handleGoogleStudent = async () => {
     setAuthError('');
@@ -133,47 +202,100 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
     }
   };
 
+  const whatsappDigits = (settings.whatsapp || settings.phone || '').replace(/\D/g, '');
+  const vis = fe.sectionVisibility;
+
   return (
     <div className="min-h-screen bg-white text-[#0F172A] flex flex-col">
-      {/* Top Bar Contract: Brand wordmark — 4 concise links — 1 primary action */}
+      {/* Trial Plan Notice (Shown whenever tenant license is TRIAL) */}
+      {tenantContext?.isTrial && (
+        <div className="bg-blue-50 border-b border-blue-200 text-[#0F172A] px-4 py-2 text-center text-xs">
+          <span className="font-mono font-bold text-[#0032A0]">TRIAL PLAN ACTIVE</span>
+          <span className="mx-2 text-slate-400" aria-hidden="true">·</span>
+          <span className="font-semibold">{tenantContext.planCode || 'PRO'} Tier</span>
+          <span className="mx-2 text-slate-400" aria-hidden="true">·</span>
+          <span className={`font-mono font-semibold tabular-nums ${trialDaysLeft <= 0 ? 'text-red-700' : 'text-emerald-700'}`}>
+            {trialDaysLeft > 0 ? `${trialDaysLeft}d remaining` : 'Trial Expired'}
+          </span>
+          {tenantContext.licenseExpirationDate && (
+            <>
+              <span className="mx-2 text-slate-400" aria-hidden="true">·</span>
+              <span className="font-mono text-slate-600 tabular-nums">
+                Valid until {tenantContext.licenseExpirationDate.slice(0, 10)}
+              </span>
+            </>
+          )}
+          <span className="mx-2 text-slate-400" aria-hidden="true">·</span>
+          <a
+            href={`/pay?org=${encodeURIComponent(tenantContext.organizationId || '')}`}
+            className="font-semibold text-[#0032A0] hover:underline whitespace-nowrap"
+          >
+            Upgrade Portal
+          </a>
+        </div>
+      )}
+
+      {/* Configurable Announcement Banner */}
+      {vis.showAnnouncement && fe.announcementEnabled && fe.announcementText.trim() && (
+        <div className="bg-[#FFBE1B] text-[#122B5C] px-4 py-1.5 text-center text-xs font-semibold">
+          {fe.announcementText}
+          {settings.phone && (
+            <>
+              {' '}
+              <span aria-hidden="true">·</span> Call{' '}
+              <a href={`tel:${settings.phone}`} className="underline font-mono">
+                {settings.phone}
+              </a>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Top Bar Contract: Brand wordmark — 5 concise single-line links — 1 primary action */}
       <header className="border-b border-[#E2E8F0] bg-white sticky top-0 z-30">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3 sm:gap-6">
-          <a href="#top" className="flex items-center gap-2.5 min-w-0">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4 sm:gap-8">
+          <a href="#top" className="flex items-center gap-2.5 min-w-0 shrink-0">
             {settings.logoUrl ? (
               <img
                 src={settings.logoUrl}
-                alt={settings.instituteName}
+                alt={displayInstituteName}
                 referrerPolicy="no-referrer"
-                className="w-8 h-8 rounded object-cover shrink-0"
+                className="w-8 h-8 rounded object-contain shrink-0 bg-white"
               />
             ) : (
               <span className="w-8 h-8 rounded bg-[#0032A0] text-white font-display font-bold text-sm flex items-center justify-center shrink-0">
                 {instituteInitial}
               </span>
             )}
-            <div className="flex flex-col leading-tight min-w-0">
-              <span className="font-display font-bold text-sm sm:text-lg tracking-tight text-[#0F172A] truncate max-w-[170px] sm:max-w-[280px] md:max-w-none">
-                {displayInstituteName}
-              </span>
-              <span className="text-[10px] font-mono font-semibold text-[#0032A0] uppercase tracking-wider truncate">
-                Powered by SALAR Tech
-              </span>
-            </div>
+            <span className="font-display font-bold text-base sm:text-lg tracking-tight text-[#0F172A] whitespace-nowrap truncate max-w-[180px] sm:max-w-[280px] md:max-w-none">
+              {displayInstituteName}
+            </span>
           </a>
 
           <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600">
             <a href="#portal-auth" className="hover:text-[#0032A0] transition-colors whitespace-nowrap shrink-0">
               Student Portal
             </a>
-            <a href="#courses" className="hover:text-[#0032A0] transition-colors whitespace-nowrap shrink-0">
-              Courses
-            </a>
-            <a href="#test-series" className="hover:text-[#0032A0] transition-colors whitespace-nowrap shrink-0">
-              Test Series
-            </a>
-            <a href="#contact" className="hover:text-[#0032A0] transition-colors whitespace-nowrap shrink-0">
-              Contact
-            </a>
+            {vis.showSubjects && fe.subjects.length > 0 && (
+              <a href="#subjects" className="hover:text-[#0032A0] transition-colors whitespace-nowrap shrink-0">
+                Subjects
+              </a>
+            )}
+            {vis.showCourses && (
+              <a href="#courses" className="hover:text-[#0032A0] transition-colors whitespace-nowrap shrink-0">
+                Courses
+              </a>
+            )}
+            {vis.showTestSeries && (
+              <a href="#test-series" className="hover:text-[#0032A0] transition-colors whitespace-nowrap shrink-0">
+                Test Series
+              </a>
+            )}
+            {vis.showContact && (
+              <a href="#contact" className="hover:text-[#0032A0] transition-colors whitespace-nowrap shrink-0">
+                Contact
+              </a>
+            )}
           </nav>
 
           <div className="flex items-center shrink-0">
@@ -196,13 +318,30 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
             {/* Left Editorial / Hero Column */}
             <div className="lg:col-span-7 flex flex-col justify-between bg-white border border-[#E2E8F0] rounded-xl overflow-hidden">
               <div className="p-6 sm:p-8 space-y-4">
-                <div className="flex items-center gap-2 text-xs font-mono text-[#0032A0] font-semibold">
+                <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-[#0032A0] font-semibold">
+                  {fe.establishedYear && (
+                    <>
+                      <span>Est. {fe.establishedYear}</span>
+                      <span aria-hidden="true">·</span>
+                    </>
+                  )}
                   <span>{settings.tagline}</span>
                 </div>
                 <h1 className="font-display text-3xl sm:text-4xl font-bold text-[#0F172A] tracking-tight leading-tight text-balance">
                   {settings.heroTitle}
                 </h1>
                 <p className="text-base text-slate-600 leading-relaxed max-w-2xl">{settings.heroSubtitle}</p>
+
+                {vis.showHighlights && fe.highlights.length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
+                    {fe.highlights.map((item, idx) => (
+                      <div key={`${item.label}-${idx}`} className="bg-slate-50 border border-[#E2E8F0] rounded-lg px-3 py-2">
+                        <p className="font-mono font-bold text-sm text-[#0032A0] tabular-nums">{item.value}</p>
+                        <p className="text-[11px] text-slate-600">{item.label}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 <div className="flex flex-wrap items-center gap-3 pt-2">
                   <a
@@ -229,7 +368,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
               <div className="relative h-56 sm:h-64 w-full border-t border-[#E2E8F0] bg-slate-100">
                 <img
                   src={settings.heroImage || GENERATED_ASSETS.hero}
-                  alt={`${displayInstituteName} Lecture Studio`}
+                  alt={`${displayInstituteName} Campus & Classroom`}
                   referrerPolicy="no-referrer"
                   className="w-full h-full object-cover"
                 />
@@ -246,7 +385,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                   <h2 className="font-display text-lg sm:text-xl font-bold text-[#0F172A]">
                     Student Examination Portal
                   </h2>
-                  <span className="text-[11px] sm:text-xs font-mono text-slate-500">CBT ACCESS</span>
+                  <span className="text-[11px] sm:text-xs font-mono text-slate-500">PCMB CBT ACCESS</span>
                 </div>
 
                 {pendingExamCode && (
@@ -265,7 +404,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                       setAuthError('');
                       setAuthSuccess('');
                     }}
-                    className={`py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                    className={`py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${
                       authTab === 'login' ? 'bg-white text-[#0032A0] shadow-xs' : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
@@ -278,7 +417,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                       setAuthError('');
                       setAuthSuccess('');
                     }}
-                    className={`py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                    className={`py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${
                       authTab === 'register'
                         ? 'bg-white text-[#0032A0] shadow-xs'
                         : 'text-slate-600 hover:text-slate-900'
@@ -293,7 +432,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                       setAuthError('');
                       setAuthSuccess('');
                     }}
-                    className={`py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                    className={`py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${
                       authTab === 'quick-join'
                         ? 'bg-white text-[#0032A0] shadow-xs'
                         : 'text-slate-600 hover:text-slate-900'
@@ -359,11 +498,13 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
                           onChange={(e) => setTargetExam(e.target.value as typeof targetExam)}
                           className="w-full px-3 py-2 text-sm border border-[#E2E8F0] rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
                         >
-                          <option value="JEE Main">{isIsolatedTenant ? 'JEE Main' : 'JEE Main Mathematics'}</option>
-                          <option value="JEE Advanced">{isIsolatedTenant ? 'JEE Advanced' : 'JEE Advanced Mathematics'}</option>
-                          <option value="MHT-CET">{isIsolatedTenant ? 'MHT-CET' : 'MHT-CET Mathematics'}</option>
+                          <option value="JEE Main">JEE Main (PCM)</option>
+                          <option value="JEE Advanced">JEE Advanced (PCM)</option>
+                          <option value="MHT-CET">MHT-CET (PCM / PCB)</option>
+                          <option value="NEET">NEET-UG (PCB)</option>
                           <option value="JEE Main + Advanced">JEE Main + Advanced</option>
-                          <option value="Boards + CET">{isIsolatedTenant ? 'Boards + Entrance' : 'Boards + MHT-CET'}</option>
+                          <option value="Boards + CET">Boards + MHT-CET / NEET</option>
+                          <option value="PCMB Foundation">PCMB Foundation (Classes 7th–10th)</option>
                         </select>
                       </div>
                     </>
@@ -493,181 +634,451 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
           </div>
         </section>
 
-        {/* Published Courses Section */}
-        <section id="courses" className="max-w-7xl mx-auto px-4 sm:px-6 py-12 border-b border-[#E2E8F0]">
-          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
-            <div>
-              <p className="text-xs font-mono text-[#0032A0] font-semibold uppercase tracking-wider mb-1">
-                {isIsolatedTenant ? `${displayInstituteName} Curriculum` : 'Mathematics Curriculum'}
-              </p>
-              <h2 className="font-display text-2xl font-bold text-[#0F172A]">Published Courses</h2>
+        {/* Subjects Taught (PCMB: Physics, Chemistry, Mathematics, Biology) */}
+        {vis.showSubjects && fe.subjects.length > 0 && (
+          <section id="subjects" className="max-w-7xl mx-auto px-4 sm:px-6 py-12 border-b border-[#E2E8F0]">
+            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
+              <div>
+                <p className="text-xs font-mono text-[#0032A0] font-semibold uppercase tracking-wider mb-1">
+                  Core Science &amp; Competitive Streams
+                </p>
+                <h2 className="font-display text-2xl font-bold text-[#0F172A] text-balance">
+                  {fe.sectionHeadings.subjectsHeading}
+                </h2>
+                {fe.sectionHeadings.subjectsSubheading && (
+                  <p className="text-sm text-slate-600 mt-1 max-w-2xl">{fe.sectionHeadings.subjectsSubheading}</p>
+                )}
+              </div>
+              <span className="text-xs font-mono text-slate-500 tabular-nums shrink-0">
+                {fe.subjects.length} Subjects Taught
+              </span>
             </div>
-            <span className="text-xs font-mono text-slate-500 tabular-nums">{courses.length} Courses Active</span>
-          </div>
 
-          {courses.length === 0 ? (
-            <div className="border border-[#E2E8F0] rounded-xl p-8 text-center bg-slate-50">
-              <BookOpen className="w-8 h-8 text-slate-400 mx-auto mb-2" />
-              <p className="text-sm font-medium text-slate-700">No published courses yet.</p>
-              <p className="text-xs text-slate-500 mt-1">
-                {isIsolatedTenant
-                  ? 'Administrators can publish structured courses from the Admin Console.'
-                  : 'Administrators can publish Class 11th & 12th Mathematics courses from the Admin Console.'}
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {courses.map((c) => (
-                <div
-                  key={c.id}
-                  className="bg-white border border-[#E2E8F0] rounded-xl overflow-hidden flex flex-col justify-between"
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+              {fe.subjects.map((subj, idx) => (
+                <article
+                  key={subj.id || `${subj.name}-${idx}`}
+                  className="bg-white border border-[#E2E8F0] rounded-xl p-5 flex flex-col justify-between gap-4"
                 >
                   <div>
-                    <div className="aspect-4/3 bg-slate-100 border-b border-[#E2E8F0]">
-                      <img
-                        src={c.thumbnailUrl || GENERATED_ASSETS.courseJeeMain}
-                        alt={c.name}
-                        referrerPolicy="no-referrer"
-                        className="w-full h-full object-cover"
-                      />
+                    <div className="flex items-center justify-between gap-2 text-xs font-mono text-[#0032A0] font-semibold mb-1.5">
+                      <span>0{idx + 1}</span>
+                      <span className="truncate">{subj.tagline}</span>
                     </div>
-                    <div className="p-5">
-                      <div className="flex items-center gap-2 text-xs font-mono text-slate-500 mb-1.5">
-                        <span>{c.category}</span>
-                        <span aria-hidden="true">·</span>
-                        <span>{c.classLevel || 'Class 11th & 12th'}</span>
-                      </div>
-                      <h3 className="font-display font-bold text-base text-[#0F172A] mb-2">{c.name}</h3>
-                      <p className="text-sm text-slate-600 line-clamp-2">{c.description}</p>
+                    <h3 className="font-display text-lg font-bold text-[#0F172A] mb-2">{subj.name}</h3>
+                    <p className="text-xs text-slate-600 leading-relaxed">{subj.description}</p>
+                  </div>
+                  {subj.topics && (
+                    <div className="pt-3 border-t border-slate-100">
+                      <p className="text-[11px] font-mono text-slate-500">Key Focus: {subj.topics}</p>
                     </div>
-                  </div>
-                  <div className="px-5 py-3.5 border-t border-[#E2E8F0] bg-slate-50 flex items-center justify-between">
-                    <span className="font-mono font-bold text-base text-[#0F172A] tabular-nums">
-                      {formatCurrencyINR(c.price)}
-                    </span>
-                    <a
-                      href="#portal-auth"
-                      className="px-3.5 py-1.5 text-xs font-semibold text-white bg-[#0032A0] hover:bg-[#00257a] rounded-lg transition-colors"
-                    >
-                      Enroll via Portal
-                    </a>
-                  </div>
-                </div>
+                  )}
+                </article>
               ))}
             </div>
-          )}
-        </section>
+          </section>
+        )}
+
+        {/* Published Courses Section */}
+        {vis.showCourses && (
+          <section id="courses" className="max-w-7xl mx-auto px-4 sm:px-6 py-12 border-b border-[#E2E8F0]">
+            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
+              <div>
+                <p className="text-xs font-mono text-[#0032A0] font-semibold uppercase tracking-wider mb-1">
+                  {isIsolatedTenant
+                    ? `${displayInstituteName} Curriculum`
+                    : 'IIT-JEE, NEET, MHT-CET & PCMB Foundation'}
+                </p>
+                <h2 className="font-display text-2xl font-bold text-[#0F172A]">
+                  {fe.sectionHeadings.coursesHeading}
+                </h2>
+                {fe.sectionHeadings.coursesSubheading && (
+                  <p className="text-sm text-slate-600 mt-1">{fe.sectionHeadings.coursesSubheading}</p>
+                )}
+              </div>
+              <span className="text-xs font-mono text-slate-500 tabular-nums shrink-0">
+                {displayedCourses.length} Courses Active
+              </span>
+            </div>
+
+            {displayedCourses.length === 0 ? (
+              <div className="border border-[#E2E8F0] rounded-xl p-8 text-center bg-slate-50">
+                <BookOpen className="w-8 h-8 text-slate-400 mx-auto mb-2" />
+                <p className="text-sm font-medium text-slate-700">No published courses yet.</p>
+                <p className="text-xs text-slate-500 mt-1">
+                  Administrators can publish structured PCMB courses from the Admin Console.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {displayedCourses.map((c) => (
+                  <div
+                    key={c.id}
+                    className="bg-white border border-[#E2E8F0] rounded-xl overflow-hidden flex flex-col justify-between"
+                  >
+                    <div>
+                      <div className="aspect-4/3 bg-slate-100 border-b border-[#E2E8F0]">
+                        <img
+                          src={c.thumbnailUrl || GENERATED_ASSETS.courseJeeMain}
+                          alt={c.name}
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div className="p-5">
+                        <div className="flex items-center gap-2 text-xs font-mono text-[#0032A0] font-semibold mb-1.5 flex-wrap">
+                          <span>{c.category}</span>
+                          <span aria-hidden="true">·</span>
+                          <span>{c.classLevel || 'Class 11th & 12th'}</span>
+                          {c.subjectTag && (
+                            <>
+                              <span aria-hidden="true">·</span>
+                              <span className="text-slate-500">{c.subjectTag}</span>
+                            </>
+                          )}
+                        </div>
+                        <h3 className="font-display font-bold text-base text-[#0F172A] mb-2">{c.name}</h3>
+                        <p className="text-sm text-slate-600 line-clamp-3">{c.description}</p>
+                      </div>
+                    </div>
+                    <div className="px-5 py-3.5 border-t border-[#E2E8F0] bg-slate-50 flex items-center justify-between">
+                      <span className="font-mono font-bold text-base text-[#0F172A] tabular-nums">
+                        {c.price > 0 ? formatCurrencyINR(c.price) : 'Admissions Open'}
+                      </span>
+                      <a
+                        href="#portal-auth"
+                        className="px-3.5 py-1.5 text-xs font-semibold text-white bg-[#0032A0] hover:bg-[#00257a] rounded-lg transition-colors whitespace-nowrap"
+                      >
+                        Enroll via Portal
+                      </a>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
 
         {/* Published Test Series Section */}
-        <section id="test-series" className="max-w-7xl mx-auto px-4 sm:px-6 py-12 border-b border-[#E2E8F0]">
-          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
-            <div>
-              <p className="text-xs font-mono text-[#0032A0] font-semibold uppercase tracking-wider mb-1">
-                CBT Assessment Packages
-              </p>
-              <h2 className="font-display text-2xl font-bold text-[#0F172A]">
-                {isIsolatedTenant ? 'Online Test Series' : 'Mathematics Test Series'}
-              </h2>
+        {vis.showTestSeries && (
+          <section id="test-series" className="max-w-7xl mx-auto px-4 sm:px-6 py-12 border-b border-[#E2E8F0]">
+            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
+              <div>
+                <p className="text-xs font-mono text-[#0032A0] font-semibold uppercase tracking-wider mb-1">
+                  CBT Assessment Packages &amp; G-PAT
+                </p>
+                <h2 className="font-display text-2xl font-bold text-[#0F172A]">
+                  {fe.sectionHeadings.testSeriesHeading}
+                </h2>
+                {fe.sectionHeadings.testSeriesSubheading && (
+                  <p className="text-sm text-slate-600 mt-1">{fe.sectionHeadings.testSeriesSubheading}</p>
+                )}
+              </div>
+              <span className="text-xs font-mono text-slate-500 tabular-nums shrink-0">
+                {displayedSeries.length} Series Published
+              </span>
             </div>
-            <span className="text-xs font-mono text-slate-500 tabular-nums">
-              {testSeries.length} Series Published
-            </span>
-          </div>
 
-          {testSeries.length === 0 ? (
-            <div className="border border-[#E2E8F0] rounded-xl p-8 text-center bg-slate-50">
-              <ClipboardList className="w-8 h-8 text-slate-400 mx-auto mb-2" />
-              <p className="text-sm font-medium text-slate-700">No published test series packages yet.</p>
-              <p className="text-xs text-slate-500 mt-1">
-                {isIsolatedTenant
-                  ? 'Published Computer-Based Test series packages appear here once activated by your institute.'
-                  : 'JEE Main, JEE Advanced, and MHT-CET Mathematics test series appear here once published.'}
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {testSeries.map((ts) => (
-                <div
-                  key={ts.id}
-                  className="bg-white border border-[#E2E8F0] rounded-xl p-5 flex flex-col justify-between"
-                >
-                  <div>
-                    <div className="flex items-center gap-2 text-xs font-mono text-[#0032A0] mb-2">
-                      <span>{ts.examCategory}</span>
-                      <span aria-hidden="true">·</span>
-                      <span>{ts.mockTestCount} Mock Tests</span>
+            {displayedSeries.length === 0 ? (
+              <div className="border border-[#E2E8F0] rounded-xl p-8 text-center bg-slate-50">
+                <ClipboardList className="w-8 h-8 text-slate-400 mx-auto mb-2" />
+                <p className="text-sm font-medium text-slate-700">No published test series packages yet.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+                {displayedSeries.map((ts) => (
+                  <div
+                    key={ts.id}
+                    className="bg-white border border-[#E2E8F0] rounded-xl p-5 flex flex-col justify-between"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2 text-xs font-mono text-[#0032A0] font-semibold mb-2">
+                        <span>{ts.examCategory}</span>
+                        <span aria-hidden="true">·</span>
+                        <span className="tabular-nums">{ts.mockTestCount} Tests</span>
+                      </div>
+                      <h3 className="font-display font-bold text-base text-[#0F172A] mb-2">{ts.title}</h3>
+                      <p className="text-xs text-slate-600 mb-4 leading-relaxed">{ts.description}</p>
+                      <ul className="space-y-1.5 text-xs text-slate-600 mb-5">
+                        <li className="flex items-center gap-2">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          <span>NTA-grade Computer-Based Test interface</span>
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          <span>Instant scorecard, accuracy &amp; rank review</span>
+                        </li>
+                      </ul>
                     </div>
-                    <h3 className="font-display font-bold text-base text-[#0F172A] mb-2">{ts.title}</h3>
-                    <p className="text-sm text-slate-600 mb-4">{ts.description}</p>
-                    <ul className="space-y-1.5 text-xs text-slate-600 mb-5">
-                      <li className="flex items-center gap-2">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                        <span>NTA-grade Computer-Based Test interface</span>
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                        <span>KaTeX mathematical notation &amp; instant rank list</span>
-                      </li>
-                    </ul>
+                    <div className="pt-4 border-t border-[#E2E8F0] flex items-center justify-between">
+                      <span className="font-mono font-bold text-base text-[#0F172A] tabular-nums">
+                        {formatCurrencyINR(ts.price)}
+                      </span>
+                      <a
+                        href="#portal-auth"
+                        className="px-3.5 py-1.5 text-xs font-semibold text-white bg-[#0032A0] hover:bg-[#00257a] rounded-lg transition-colors whitespace-nowrap"
+                      >
+                        Join Series
+                      </a>
+                    </div>
                   </div>
-                  <div className="pt-4 border-t border-[#E2E8F0] flex items-center justify-between">
-                    <span className="font-mono font-bold text-base text-[#0F172A] tabular-nums">
-                      {formatCurrencyINR(ts.price)}
-                    </span>
-                    <a
-                      href="#portal-auth"
-                      className="px-3.5 py-1.5 text-xs font-semibold text-white bg-[#0032A0] hover:bg-[#00257a] rounded-lg transition-colors"
-                    >
-                      Join Series
-                    </a>
+                ))}
+              </div>
+            )}
+
+            {vis.showGpat && fe.gpatSchedules.length > 0 && (
+              <div className="mt-8 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+                  <div>
+                    <p className="text-[11px] font-mono uppercase tracking-wider text-[#0032A0] font-semibold">
+                      Foundation Assessment Track
+                    </p>
+                    <h3 className="font-display font-bold text-base text-[#0F172A]">
+                      G-PAT Examination Schedules (Classes 7th – 10th)
+                    </h3>
                   </div>
+                  <span className="text-xs font-mono text-slate-500">60-Minute CBT Format</span>
                 </div>
-              ))}
-            </div>
-          )}
-        </section>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  {fe.gpatSchedules.map((gpat, idx) => (
+                    <div key={`${gpat.code}-${idx}`} className="bg-white border border-[#E2E8F0] rounded-lg p-3.5 space-y-1">
+                      <div className="flex items-center justify-between text-[11px] font-mono">
+                        <span className="text-[#0032A0] font-semibold">{gpat.code}</span>
+                        <span className="text-emerald-700 font-semibold">{gpat.classLevel}</span>
+                      </div>
+                      <p className="text-xs font-bold text-[#0F172A]">{gpat.title}</p>
+                      <p className="text-[11px] text-slate-500 flex items-center gap-1.5">
+                        <Calendar className="w-3 h-3" />
+                        {gpat.duration} · G-PAT Foundation
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* Academic Ecosystem, Features, Campus & Results (Fully editable in Admin Settings) */}
+        {(vis.showAbout || vis.showApproach || vis.showFeatures || vis.showCampus || vis.showPerformers || vis.showTestimonial) && (
+          <section className="max-w-7xl mx-auto px-4 sm:px-6 py-12 border-b border-[#E2E8F0] space-y-10">
+            {(vis.showAbout || vis.showApproach || (vis.showCampus && fe.campusFacilities.length > 0)) && (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+                {(vis.showAbout || vis.showApproach) && (
+                  <div className={`${vis.showCampus && fe.campusFacilities.length > 0 ? 'lg:col-span-6' : 'lg:col-span-12'} space-y-4`}>
+                    {vis.showAbout && (
+                      <>
+                        <p className="text-xs font-mono text-[#0032A0] font-semibold uppercase tracking-wider">
+                          {fe.establishedYear ? `Since ${fe.establishedYear}` : 'Academic Excellence'}
+                          {fe.founderName ? ` · ${fe.founderName}` : ''}
+                        </p>
+                        <h2 className="font-display text-2xl font-bold text-[#0F172A]">{fe.aboutHeading}</h2>
+                        <p className="text-sm text-slate-600 leading-relaxed">
+                          {fe.aboutBody}{' '}
+                          {fe.motto && (
+                            <strong className="text-[#0F172A]">&ldquo;{fe.motto}&rdquo;</strong>
+                          )}
+                        </p>
+                      </>
+                    )}
+                    {vis.showApproach && fe.approachSteps.length > 0 && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                        {fe.approachSteps.map((step, i) => (
+                          <div key={`${step.title}-${i}`} className="border border-[#E2E8F0] rounded-lg p-3.5 bg-slate-50">
+                            <p className="text-xs font-mono font-bold text-[#0032A0]">
+                              0{i + 1}. {step.title}
+                            </p>
+                            <p className="text-xs text-slate-600 mt-1">{step.description}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {vis.showCampus && fe.campusFacilities.length > 0 && (
+                  <div className="lg:col-span-6 space-y-3">
+                    {fe.sectionHeadings.campusHeading && (
+                      <h3 className="font-display text-lg font-bold text-[#0F172A]">
+                        {fe.sectionHeadings.campusHeading}
+                      </h3>
+                    )}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {fe.campusFacilities.map((fac, idx) => (
+                        <div key={`${fac.title}-${idx}`} className="border border-[#E2E8F0] rounded-xl overflow-hidden bg-white">
+                          {fac.imageUrl && (
+                            <div className="aspect-video bg-slate-100 border-b border-[#E2E8F0]">
+                              <img
+                                src={fac.imageUrl}
+                                alt={fac.title}
+                                referrerPolicy="no-referrer"
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
+                          )}
+                          <div className="p-4 space-y-1.5">
+                            <p className="font-display font-bold text-sm text-[#0F172A] flex items-center gap-1.5">
+                              <Building2 className="w-4 h-4 text-[#0032A0] shrink-0" />
+                              {fac.title}
+                            </p>
+                            <p className="text-xs text-slate-600 leading-relaxed">{fac.description}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Key Academic Pillars */}
+            {vis.showFeatures && fe.features.length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {fe.features.map((feat, idx) => (
+                  <div key={`${feat.title}-${idx}`} className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-4">
+                    <p className="font-display font-bold text-sm text-[#0F172A] mb-1">{feat.title}</p>
+                    <p className="text-xs text-slate-600 leading-relaxed">{feat.description}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Verified Performers + Student Testimonial */}
+            {((vis.showPerformers && fe.performers.length > 0) ||
+              (vis.showTestimonial && fe.testimonial.quote.trim().length > 0)) && (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+                {vis.showPerformers && fe.performers.length > 0 && (
+                  <div
+                    className={`${
+                      vis.showTestimonial && fe.testimonial.quote.trim().length > 0 ? 'lg:col-span-8' : 'lg:col-span-12'
+                    } bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-6 space-y-4`}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="text-xs font-mono text-[#0032A0] font-semibold uppercase tracking-wider">
+                          Verified Academic Results
+                        </p>
+                        <h3 className="font-display text-lg font-bold text-[#0F172A]">
+                          {fe.sectionHeadings.performersHeading}
+                        </h3>
+                      </div>
+                      <Award className="w-5 h-5 text-[#0032A0]" />
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                      {fe.performers.map((perf, idx) => (
+                        <div key={`${perf.name}-${idx}`} className="bg-white border border-[#E2E8F0] rounded-lg p-3">
+                          <p className="text-[11px] font-mono text-[#0032A0] font-semibold">{perf.exam}</p>
+                          <p className="text-sm font-bold text-[#0F172A] mt-0.5">{perf.name}</p>
+                          <p className="text-xs font-mono text-emerald-700 font-semibold mt-0.5">{perf.score}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {vis.showTestimonial && fe.testimonial.quote.trim().length > 0 && (
+                  <div
+                    className={`${
+                      vis.showPerformers && fe.performers.length > 0 ? 'lg:col-span-4' : 'lg:col-span-12'
+                    } bg-white border border-[#E2E8F0] rounded-xl p-6 flex flex-col justify-between gap-4`}
+                  >
+                    <div className="space-y-3">
+                      <Quote className="w-6 h-6 text-[#0032A0]" />
+                      <p className="text-xs text-slate-700 leading-relaxed italic">
+                        &ldquo;{fe.testimonial.quote}&rdquo;
+                      </p>
+                    </div>
+                    <div className="pt-3 border-t border-slate-100">
+                      <p className="text-sm font-bold text-[#0F172A]">{fe.testimonial.name}</p>
+                      <p className="text-[11px] font-mono text-slate-500">{fe.testimonial.role}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+        )}
       </main>
 
       {/* Contact Footer */}
-      <footer id="contact" className="bg-slate-50 border-t border-[#E2E8F0]">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 grid grid-cols-1 md:grid-cols-3 gap-6 text-sm text-slate-600">
-          <div>
-            <p className="font-display font-bold text-[#0F172A] mb-1">{displayInstituteName}</p>
-            <p className="text-xs text-slate-500">{settings.tagline}</p>
-            <p className="text-[11px] font-mono font-semibold text-[#0032A0] mt-2">
-              Powered by SALAR Tech
-            </p>
+      {vis.showContact && (
+        <footer id="contact" className="bg-slate-50 border-t border-[#E2E8F0]">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 grid grid-cols-1 md:grid-cols-3 gap-6 text-sm text-slate-600">
+            <div>
+              <p className="font-display font-bold text-[#0F172A] mb-1">{displayInstituteName}</p>
+              <p className="text-xs text-slate-500">{settings.tagline}</p>
+              {fe.footerNote && <p className="text-xs text-slate-500 mt-1.5">{fe.footerNote}</p>}
+              {settings.website && (
+                <a
+                  href={settings.website}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-[11px] font-mono font-semibold text-[#0032A0] hover:underline mt-2"
+                >
+                  Official Institute Website
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              )}
+            </div>
+            <div className="space-y-1.5 text-xs">
+              {settings.address && (
+                <div className="flex items-start gap-2">
+                  <MapPin className="w-4 h-4 text-[#0032A0] shrink-0 mt-0.5" />
+                  <span>{settings.address}</span>
+                </div>
+              )}
+              {settings.phone && (
+                <div className="flex items-center gap-2">
+                  <Phone className="w-4 h-4 text-[#0032A0] shrink-0" />
+                  <span className="font-mono">{settings.phone}</span>
+                </div>
+              )}
+              {whatsappDigits && (
+                <div className="flex items-center gap-2">
+                  <MessageCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <a
+                    href={`https://wa.me/${whatsappDigits}?text=${encodeURIComponent(
+                      `Hello ${displayInstituteName}, I would like to know about admissions & PCMB test series.`
+                    )}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-mono text-emerald-700 hover:underline"
+                  >
+                    WhatsApp: {settings.whatsapp || settings.phone}
+                  </a>
+                </div>
+              )}
+              {settings.email && (
+                <div className="flex items-center gap-2">
+                  <Mail className="w-4 h-4 text-[#0032A0] shrink-0" />
+                  <span>{settings.email}</span>
+                </div>
+              )}
+              {fe.officeHours && (
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-[#0032A0] shrink-0" />
+                  <span>{fe.officeHours}</span>
+                </div>
+              )}
+            </div>
+            <div className="flex flex-col md:items-end justify-between text-xs text-slate-500">
+              <div className="flex flex-wrap items-center gap-4">
+                <button
+                  type="button"
+                  onClick={onOpenAdminGate}
+                  className="text-left md:text-right font-semibold text-[#0032A0] hover:underline"
+                >
+                  Faculty &amp; Admin Console Gate
+                </button>
+              </div>
+              <span className="mt-2 font-mono">
+                © {new Date().getFullYear()} {displayInstituteName} · SALAR Tech
+              </span>
+            </div>
           </div>
-          <div className="space-y-1.5 text-xs">
-            <div className="flex items-start gap-2">
-              <MapPin className="w-4 h-4 text-[#0032A0] shrink-0 mt-0.5" />
-              <span>{settings.address}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Phone className="w-4 h-4 text-[#0032A0] shrink-0" />
-              <span className="font-mono">{settings.phone}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Mail className="w-4 h-4 text-[#0032A0] shrink-0" />
-              <span>{settings.email}</span>
-            </div>
-          </div>
-          <div className="flex flex-col md:items-end justify-between text-xs text-slate-500">
-            <div className="flex flex-wrap items-center gap-4">
-              <button
-                type="button"
-                onClick={onOpenAdminGate}
-                className="text-left md:text-right font-semibold text-[#0032A0] hover:underline"
-              >
-                Faculty &amp; Admin Console Gate
-              </button>
-            </div>
-            <span className="mt-2 font-mono">
-              © {new Date().getFullYear()} {displayInstituteName} · SALAR Tech
-            </span>
-          </div>
-        </div>
-      </footer>
+        </footer>
+      )}
     </div>
   );
 };
+

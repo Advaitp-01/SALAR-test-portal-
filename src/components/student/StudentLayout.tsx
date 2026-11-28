@@ -33,8 +33,16 @@ const STUDENT_SIDEBAR: Array<{
 ];
 
 export const StudentLayout: React.FC<StudentLayoutProps> = ({ activeModule, onSelectModule, children }) => {
-  const { settings, studentProfile, firebaseUser, logout } = useAuth();
+  const { settings, studentProfile, tenantContext, firebaseUser, logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  const trialDaysLeft = tenantContext?.isTrial
+    ? typeof tenantContext.trialDaysRemaining === 'number'
+      ? tenantContext.trialDaysRemaining
+      : tenantContext.licenseExpirationDate
+      ? Math.ceil((new Date(tenantContext.licenseExpirationDate).getTime() - Date.now()) / 86400000)
+      : 0
+    : 0;
 
   const navContent = (
     <div className="flex flex-col h-full bg-white border-r border-[#E2E8F0]">
@@ -91,6 +99,11 @@ export const StudentLayout: React.FC<StudentLayoutProps> = ({ activeModule, onSe
       </nav>
 
       <div className="p-3 border-t border-[#E2E8F0] bg-slate-50 shrink-0 space-y-2">
+        {tenantContext?.isTrial && (
+          <div className="px-2 py-1 border-b border-slate-200/80 text-[11px] font-mono text-[#0032A0] font-semibold">
+            TRIAL PLAN · {trialDaysLeft > 0 ? `${trialDaysLeft}d left` : 'Expired'}
+          </div>
+        )}
         <div className="px-2 py-1">
           <p className="text-xs font-semibold text-[#0F172A] truncate">
             {studentProfile?.name || firebaseUser?.displayName || 'Student'}

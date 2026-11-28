@@ -468,7 +468,7 @@ const PortalShell: React.FC = () => {
           <StudentDashboardView onNavigate={setStudentModule} onLaunchExam={setActiveCbtExam} />
         )}
         {studentModule === 'exams' && <StudentExamsView onLaunchExam={setActiveCbtExam} />}
-        {studentModule === 'courses' && <StudentCoursesView />}
+        {studentModule === 'courses' && <StudentCoursesView onLaunchExam={setActiveCbtExam} />}
         {studentModule === 'test-series' && <StudentTestSeriesView onLaunchExam={setActiveCbtExam} />}
         {studentModule === 'purchases' && <StudentPurchasesView />}
         {studentModule === 'profile' && <StudentProfileView />}

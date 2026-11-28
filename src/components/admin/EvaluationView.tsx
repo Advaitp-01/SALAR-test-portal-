@@ -171,7 +171,7 @@ export const EvaluationView: React.FC = () => {
         <div>
           <h1 className="font-display text-2xl font-bold text-[#0F172A]">Evaluation &amp; Moderation</h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Review submitted Mathematics answers, override question marks, and record immutable audit logs
+            Review submitted PCMB answers, override question marks, and record immutable audit logs
           </p>
         </div>
         <div className="inline-flex p-1 bg-slate-100 rounded-lg">

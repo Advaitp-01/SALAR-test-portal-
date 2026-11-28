@@ -548,6 +548,14 @@ export function createSalarRouter(): express.Router {
       org.status === 'ARCHIVED' ||
       ['SUSPENDED', 'EXPIRED', 'REVOKED', 'RELEASED'].includes(effectiveLicenseStatus);
 
+    const billingCycle = license?.billingCycle || org.billingCycle;
+    const isTrial = billingCycle === 'TRIAL';
+    const licenseStartDate = license?.activationDate || license?.issueDate || org.createdAt;
+    const licenseExpirationDate = license?.expirationDate || '';
+    const trialDaysRemaining = licenseExpirationDate
+      ? Math.max(0, Math.ceil((new Date(licenseExpirationDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+      : null;
+
     res.json({
       found: true,
       isDefaultRoot,
@@ -579,6 +587,12 @@ export function createSalarRouter(): express.Router {
       country: org.country,
       logoUrl: org.logoUrl,
       planCode: org.planCode,
+      billingCycle,
+      isTrial,
+      licenseStartDate,
+      licenseExpirationDate,
+      trialDaysRemaining,
+      trialNotes: license?.notes || '',
       deploymentType: org.deploymentType,
       studentCapacity: org.studentCapacity,
       examCapacity: org.examCapacity,
@@ -619,11 +633,17 @@ export function createSalarRouter(): express.Router {
     const pendingInvoices = db.subscriptionInvoices.filter(
       (inv) => inv.organizationId === org.id && (inv.status === 'PENDING' || inv.status === 'OVERDUE')
     );
+    const lic = db.licenses.find((l) => l.id === org.licenseId || l.organizationId === org.id);
+    const billingCycle = lic?.billingCycle || org.billingCycle;
 
     res.json({
       enabled: Boolean(db.systemSettings.manualGateway?.enabled),
       organizationId: org.id,
       instituteName: org.instituteName,
+      billingCycle,
+      isTrial: billingCycle === 'TRIAL',
+      planCode: org.planCode,
+      expirationDate: lic?.expirationDate || '',
       manualGateway: db.systemSettings.manualGateway,
       pendingInvoices,
     });
@@ -1781,7 +1801,7 @@ export function createSalarRouter(): express.Router {
       res.status(404).json({ error: 'Organization not found.' });
       return;
     }
-    const lic = db.licenses.find((l) => l.id === org.licenseId);
+    const lic = db.licenses.find((l) => l.id === org.licenseId || l.organizationId === org.id);
     if (!lic) {
       res.status(404).json({ error: `No license record found for ${org.instituteName}.` });
       return;
@@ -1798,6 +1818,41 @@ export function createSalarRouter(): express.Router {
       .toUpperCase() as BillingCycle;
     const validCycles: BillingCycle[] = ['TRIAL', 'MONTHLY', 'QUARTERLY', 'YEARLY', 'CUSTOM'];
     const nextCycle: BillingCycle = validCycles.includes(requestedCycle) ? requestedCycle : 'CUSTOM';
+
+    const requestedPlanCode = body.planCode ? (String(body.planCode).trim().toUpperCase() as PlanCode) : org.planCode;
+    const matchedPlan = db.licensePlans.find((p) => p.code === requestedPlanCode) || db.licensePlans.find((p) => p.code === org.planCode) || db.licensePlans[1];
+    const planChanged = matchedPlan.code !== org.planCode;
+
+    if (planChanged) {
+      org.planId = matchedPlan.id;
+      org.planCode = matchedPlan.code;
+      org.storageLimitMb = matchedPlan.storageLimitMb;
+      org.studentCapacity = Number(body.studentCapacity) || matchedPlan.studentLimit;
+      org.examCapacity = Number(body.examCapacity) || matchedPlan.examLimit;
+      lic.planId = matchedPlan.id;
+      lic.planCode = matchedPlan.code;
+      lic.storageLimitMb = matchedPlan.storageLimitMb;
+      lic.studentLimit = org.studentCapacity;
+      lic.examLimit = org.examCapacity;
+      lic.featurePermissions = matchedPlan.features;
+    } else {
+      if (typeof body.studentCapacity === 'number' && body.studentCapacity > 0) {
+        org.studentCapacity = body.studentCapacity;
+        lic.studentLimit = body.studentCapacity;
+      }
+      if (typeof body.examCapacity === 'number' && body.examCapacity > 0) {
+        org.examCapacity = body.examCapacity;
+        lic.examLimit = body.examCapacity;
+      }
+    }
+
+    if (body.customPrice !== undefined) {
+      org.customPrice = body.customPrice === null || body.customPrice === '' ? null : Number(body.customPrice);
+    } else if (nextCycle === 'TRIAL') {
+      org.customPrice = 0;
+    } else if (org.customPrice === 0) {
+      org.customPrice = null;
+    }
 
     const validityWindow = resolveValidityWindow({
       billingCycle: nextCycle,
@@ -1816,13 +1871,19 @@ export function createSalarRouter(): express.Router {
     const isFutureExp = new Date(expIso).getTime() > Date.now();
     const fromStatus = lic.status;
 
+    const basePrice = nextCycle === 'TRIAL' ? 0 : computePlanPrice(matchedPlan, nextCycle, org.customPrice);
+    const gstPercent = db.systemSettings.defaultGstPercent || 18;
+    const gstAmount = Math.round((basePrice * gstPercent) / 100);
+    const totalAmount = basePrice + gstAmount;
+
     lic.billingCycle = nextCycle;
     lic.activationDate = startIso;
     lic.expirationDate = expIso;
     lic.renewalDate = expIso;
+    lic.priceAmount = basePrice;
     lic.status = isFutureExp ? 'ACTIVE' : 'EXPIRED';
     lic.signature = signLicensePayload(lic.licenseKey, org.id, lic.planCode, expIso);
-    if (typeof body.notes === 'string' && body.notes.trim()) {
+    if (typeof body.notes === 'string') {
       lic.notes = body.notes.trim();
     }
     lic.updatedAt = now;
@@ -1839,14 +1900,62 @@ export function createSalarRouter(): express.Router {
       tenant.updatedAt = now;
     }
 
-    const sub = db.subscriptions.find((s) => s.organizationId === org.id);
-    if (sub) {
+    let sub = db.subscriptions.find((s) => s.organizationId === org.id);
+    if (!sub) {
+      sub = {
+        id: `sub-${crypto.randomBytes(4).toString('hex')}`,
+        organizationId: org.id,
+        organizationName: org.instituteName,
+        planId: matchedPlan.id,
+        planCode: matchedPlan.code,
+        billingCycle: nextCycle,
+        baseAmount: basePrice,
+        gstPercent,
+        gstAmount,
+        totalAmount,
+        currency: 'INR',
+        status: isFutureExp ? 'ACTIVE' : 'EXPIRED',
+        currentPeriodStart: startIso,
+        currentPeriodEnd: expIso,
+        autoRenew: nextCycle !== 'TRIAL',
+        createdAt: now,
+        updatedAt: now,
+      };
+      db.subscriptions.unshift(sub);
+    } else {
+      sub.planId = matchedPlan.id;
+      sub.planCode = matchedPlan.code;
       sub.billingCycle = nextCycle;
+      sub.baseAmount = basePrice;
+      sub.gstPercent = gstPercent;
+      sub.gstAmount = gstAmount;
+      sub.totalAmount = totalAmount;
       sub.currentPeriodStart = startIso;
       sub.currentPeriodEnd = expIso;
       sub.status = isFutureExp ? 'ACTIVE' : 'EXPIRED';
       sub.autoRenew = nextCycle !== 'TRIAL';
       sub.updatedAt = now;
+    }
+
+    let createdInvoice = null;
+    if (body.generateInvoice === true && nextCycle !== 'TRIAL' && totalAmount > 0) {
+      db.counters.invoiceSeq += 1;
+      createdInvoice = {
+        id: `inv-${crypto.randomBytes(4).toString('hex')}`,
+        invoiceNumber: `SALAR-INV-${new Date().getFullYear()}-${String(db.counters.invoiceSeq).padStart(4, '0')}`,
+        subscriptionId: sub.id,
+        organizationId: org.id,
+        organizationName: org.instituteName,
+        subtotal: basePrice,
+        gstPercent,
+        gstAmount,
+        totalAmount,
+        dueDate: now.slice(0, 10),
+        status: 'PENDING' as const,
+        description: `${matchedPlan.name} (${nextCycle}) — Trial Conversion`,
+        createdAt: now,
+      };
+      db.subscriptionInvoices.unshift(createdInvoice);
     }
 
     const dayCount = Math.max(
@@ -1856,7 +1965,7 @@ export function createSalarRouter(): express.Router {
     const summaryLabel =
       nextCycle === 'TRIAL'
         ? `Assigned ${dayCount}-day trial (${startIso.slice(0, 10)} to ${expIso.slice(0, 10)})`
-        : `Updated validity dates (${startIso.slice(0, 10)} to ${expIso.slice(0, 10)}, ${nextCycle})`;
+        : `Updated validity dates (${startIso.slice(0, 10)} to ${expIso.slice(0, 10)}, ${nextCycle} · ${matchedPlan.code})`;
 
     appendLicenseEvent(db, {
       licenseId: lic.id,
@@ -1878,7 +1987,7 @@ export function createSalarRouter(): express.Router {
     });
 
     writeSalarDb(db);
-    res.json({ organization: org, license: lic });
+    res.json({ organization: org, license: lic, subscription: sub, invoice: createdInvoice });
   });
 
   router.get('/owner/organizations/:id/export', requireOwnerAuth, (req: AuthenticatedOwnerRequest, res: Response) => {
@@ -2650,11 +2759,26 @@ export function createSalarRouter(): express.Router {
 
     // Step 13 & 14: Generate new license key & bind new client
     const plan = db.licensePlans.find((p) => p.code === newOrg!.planCode) || db.licensePlans[1];
-    const expIso = addPeriodToIso(now, newOrg.billingCycle);
+    const validityWindow = resolveValidityWindow({
+      billingCycle: newOrg.billingCycle,
+      startDate: body.newStartDate || body.startDate,
+      expirationDate: body.newExpirationDate || body.expirationDate,
+      trialDays: body.newTrialDays ?? body.trialDays,
+      customDays: body.newCustomDays ?? body.customDays,
+      fallbackStartIso: now,
+    });
+    if ('error' in validityWindow) {
+      res.status(400).json({ error: validityWindow.error });
+      return;
+    }
+    const { startIso, expIso } = validityWindow;
     const freshLicId = `lic-${crypto.randomBytes(5).toString('hex')}`;
     const freshKey = generateLicenseKey(newOrg.shortCode, plan.code);
     const freshSig = signLicensePayload(freshKey, newOrg.id, plan.code, expIso);
-    const basePrice = computePlanPrice(plan, newOrg.billingCycle, newOrg.customPrice);
+    const basePrice = newOrg.billingCycle === 'TRIAL' ? 0 : computePlanPrice(plan, newOrg.billingCycle, newOrg.customPrice);
+    const gstPercent = db.systemSettings.defaultGstPercent || 18;
+    const gstAmount = Math.round((basePrice * gstPercent) / 100);
+    const totalAmount = basePrice + gstAmount;
 
     db.licenses.unshift({
       id: freshLicId,
@@ -2666,7 +2790,7 @@ export function createSalarRouter(): express.Router {
       planCode: plan.code,
       portalAllocationId: alloc.id,
       issueDate: now,
-      activationDate: now,
+      activationDate: startIso,
       expirationDate: expIso,
       renewalDate: expIso,
       billingCycle: newOrg.billingCycle,
@@ -2679,6 +2803,62 @@ export function createSalarRouter(): express.Router {
       notes: `Issued via Portal Reassignment on ${alloc.code}`,
       createdAt: now,
       updatedAt: now,
+    });
+
+    const subId = `sub-${crypto.randomBytes(4).toString('hex')}`;
+    db.subscriptions.unshift({
+      id: subId,
+      organizationId: newOrg.id,
+      organizationName: newOrg.instituteName,
+      planId: plan.id,
+      planCode: plan.code,
+      billingCycle: newOrg.billingCycle,
+      baseAmount: basePrice,
+      gstPercent,
+      gstAmount,
+      totalAmount,
+      currency: 'INR',
+      status: 'ACTIVE',
+      currentPeriodStart: startIso,
+      currentPeriodEnd: expIso,
+      autoRenew: newOrg.billingCycle !== 'TRIAL',
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    db.counters.invoiceSeq += 1;
+    const isFreeTrial = newOrg.billingCycle === 'TRIAL' && totalAmount === 0;
+    db.subscriptionInvoices.unshift({
+      id: `inv-${crypto.randomBytes(4).toString('hex')}`,
+      invoiceNumber: `SALAR-INV-${new Date().getFullYear()}-${String(db.counters.invoiceSeq).padStart(4, '0')}`,
+      subscriptionId: subId,
+      organizationId: newOrg.id,
+      organizationName: newOrg.instituteName,
+      subtotal: basePrice,
+      gstPercent,
+      gstAmount,
+      totalAmount,
+      dueDate: now.slice(0, 10),
+      paidAt: isFreeTrial ? now : undefined,
+      status: isFreeTrial ? 'PAID' : 'PENDING',
+      description: isFreeTrial
+        ? `${plan.name} (Trial until ${expIso.slice(0, 10)}) — ${alloc.code}`
+        : `${plan.name} (${newOrg.billingCycle}) — ${alloc.code}`,
+      createdAt: now,
+    });
+
+    db.usageRecords.unshift({
+      id: `use-${crypto.randomBytes(4).toString('hex')}`,
+      organizationId: newOrg.id,
+      tenantId: freshTenantId,
+      period: now.slice(0, 7),
+      activeStudents: 0,
+      examsCreated: 0,
+      totalAttempts: 0,
+      storageUsedMb: 0,
+      apiRequests: 0,
+      bandwidthMb: 0,
+      recordedAt: now,
     });
 
     newOrg.licenseId = freshLicId;

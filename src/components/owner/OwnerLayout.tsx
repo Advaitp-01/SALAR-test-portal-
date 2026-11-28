@@ -5,6 +5,7 @@ import {
   BarChart3,
   Bell,
   Building2,
+  Clock,
   CreditCard,
   Database,
   ExternalLink,
@@ -45,6 +46,7 @@ export const OWNER_SIDEBAR_MODULES: Array<{
 }> = [
   { id: 'overview', label: 'Overview Dashboard', icon: LayoutDashboard },
   { id: 'clients', label: 'Client Organizations', icon: Building2 },
+  { id: 'trial-portals', label: 'Assign Trial Portal', icon: Clock },
   { id: 'licenses', label: 'License Management', icon: KeyRound },
   { id: 'allocations', label: 'Portal Allocation', icon: Layers },
   { id: 'plans', label: 'Plans & Pricing', icon: CreditCard },

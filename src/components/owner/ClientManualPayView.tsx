@@ -219,13 +219,43 @@ export const ClientManualPayView: React.FC<ClientManualPayViewProps> = ({ onBack
                   </p>
                 </div>
               ) : info.pendingInvoices.length === 0 ? (
-                <div className="py-12 text-center space-y-2">
-                  <ShieldCheck className="w-10 h-10 text-emerald-600 mx-auto" />
-                  <h2 className="font-display font-bold text-base text-[#0F172A]">All Invoices Settled</h2>
-                  <p className="text-xs text-slate-500">
-                    There are currently no pending subscription invoices for {info.instituteName}.
-                  </p>
-                </div>
+                info.isTrial ? (
+                  <div className="py-8 space-y-4">
+                    <div className="flex items-center gap-2 border-b border-[#E2E8F0] pb-3">
+                      <Wallet className="w-4 h-4 text-[#0032A0]" />
+                      <h2 className="font-display font-bold text-base text-[#0F172A]">
+                        Trial Plan Active — Upgrade to Full Paid License
+                      </h2>
+                    </div>
+                    <div className="p-4 rounded-xl bg-blue-50/70 border border-blue-200 space-y-2 text-xs text-slate-700">
+                      <p className="font-semibold text-[#0032A0]">
+                        {info.instituteName} is currently running on a {info.planCode || 'PRO'} Trial Plan
+                        {info.expirationDate ? ` (valid until ${info.expirationDate.slice(0, 10)})` : ''}.
+                      </p>
+                      <p>
+                        No upgrade invoice has been issued yet. To unlock uninterrupted full-term billing, pay the plan amount using the UPI QR or Bank Account shown on the left, or request the SALAR Tech platform owner to generate your GST upgrade invoice from the Billing console.
+                      </p>
+                    </div>
+                    <div className="pt-2">
+                      <button
+                        type="button"
+                        onClick={onBackToPortal}
+                        className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold bg-[#0032A0] hover:bg-[#00257a] text-white rounded-lg"
+                      >
+                        <ArrowLeft className="w-3.5 h-3.5" />
+                        Return to Institute Portal
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="py-12 text-center space-y-2">
+                    <ShieldCheck className="w-10 h-10 text-emerald-600 mx-auto" />
+                    <h2 className="font-display font-bold text-base text-[#0F172A]">All Invoices Settled</h2>
+                    <p className="text-xs text-slate-500">
+                      There are currently no pending subscription invoices for {info.instituteName}.
+                    </p>
+                  </div>
+                )
               ) : (
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <div className="flex items-center gap-2 border-b border-[#E2E8F0] pb-3">

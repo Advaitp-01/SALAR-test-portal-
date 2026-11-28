@@ -14,20 +14,48 @@ const app = createApiApp();
 // Start Server with Vite Middleware (Dev) or Static Dist (Prod)
 // ---------------------------------------------------------------------------
 async function startServer() {
-  if (process.env.NODE_ENV !== 'production') {
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distDir = path.resolve(ROOT_DIR, 'dist');
-    app.use(express.static(distDir));
-    app.get('*', (_req: Request, res: Response) => {
-      res.sendFile(path.join(distDir, 'index.html'));
-    });
-  }
+  let activeMiddleware: express.RequestHandler | null = null;
+  let initError: unknown = null;
+
+  const initPromise = (async () => {
+    if (process.env.NODE_ENV !== 'production') {
+      const { createServer: createViteServer } = await import('vite');
+      const vite = await createViteServer({
+        server: {
+          middlewareMode: true,
+          hmr: process.env.DISABLE_HMR === 'true' ? false : undefined,
+        },
+        appType: 'spa',
+      });
+      activeMiddleware = vite.middlewares;
+    } else {
+      const distDir = path.resolve(ROOT_DIR, 'dist');
+      const staticRouter = express.Router();
+      staticRouter.use(express.static(distDir));
+      staticRouter.get('*', (_req: Request, res: Response) => {
+        res.sendFile(path.join(distDir, 'index.html'));
+      });
+      activeMiddleware = staticRouter;
+    }
+  })().catch((err) => {
+    initError = err;
+    console.error('Failed to initialize frontend middleware:', err);
+  });
+
+  app.use(async (req: Request, res: Response, next) => {
+    if (!activeMiddleware && !initError) {
+      await initPromise;
+    }
+    if (initError) {
+      res.status(500).send('Frontend middleware failed to initialize.');
+      return;
+    }
+    if (activeMiddleware) {
+      activeMiddleware(req, res, next);
+      return;
+    }
+    next();
+  });
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Giri Sir's Gurukul Classes portal running on http://0.0.0.0:${PORT}`);

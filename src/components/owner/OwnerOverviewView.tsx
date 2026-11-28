@@ -266,7 +266,10 @@ export const OwnerOverviewView: React.FC<OwnerOverviewViewProps> = ({ data, onNa
                     <p className="text-xs font-semibold text-[#0F172A] truncate">
                       {org?.instituteName || lic.organizationId}
                     </p>
-                    <p className="text-[11px] font-mono text-slate-500 truncate">{lic.licenseKey}</p>
+                    <p className="text-[11px] font-mono text-slate-500 truncate">
+                      {lic.licenseKey}
+                      {lic.billingCycle === 'TRIAL' ? ' · TRIAL' : ''}
+                    </p>
                   </div>
                   <div className="text-right shrink-0">
                     <p className={`text-xs font-mono font-semibold tabular-nums ${daysLeft <= 15 ? 'text-amber-600' : 'text-emerald-700'}`}>
@@ -292,10 +295,18 @@ export const OwnerOverviewView: React.FC<OwnerOverviewViewProps> = ({ data, onNa
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => onNavigate('clients')}
+            onClick={() => onNavigate('trial-portals')}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-[#0032A0] text-white rounded-lg hover:bg-[#00257a]"
           >
-            <Building2 className="w-3.5 h-3.5" />
+            <CalendarClock className="w-3.5 h-3.5" />
+            Assign Trial Portal
+          </button>
+          <button
+            type="button"
+            onClick={() => onNavigate('clients')}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-white border border-[#E2E8F0] text-[#0F172A] rounded-lg hover:bg-slate-50"
+          >
+            <Building2 className="w-3.5 h-3.5 text-[#0032A0]" />
             Register Client
           </button>
           <button

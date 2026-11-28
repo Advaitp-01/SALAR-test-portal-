@@ -19,6 +19,7 @@ export type HealthState = 'HEALTHY' | 'WARNING' | 'CRITICAL' | 'OFFLINE';
 export type OwnerModuleId =
   | 'overview'
   | 'clients'
+  | 'trial-portals'
   | 'licenses'
   | 'allocations'
   | 'plans'
@@ -69,6 +70,12 @@ export interface TenantContextResponse {
   country?: string;
   logoUrl?: string;
   planCode?: PlanCode;
+  billingCycle?: BillingCycle;
+  isTrial?: boolean;
+  licenseStartDate?: string;
+  licenseExpirationDate?: string;
+  trialDaysRemaining?: number;
+  trialNotes?: string;
   deploymentType?: DeploymentType;
   studentCapacity?: number;
   examCapacity?: number;
@@ -478,6 +485,10 @@ export interface PublicManualPaymentInfo {
   enabled: boolean;
   organizationId: string;
   instituteName: string;
+  billingCycle?: BillingCycle;
+  isTrial?: boolean;
+  planCode?: PlanCode;
+  expirationDate?: string;
   manualGateway: ManualPaymentGatewayConfig;
   pendingInvoices: SubscriptionInvoice[];
 }

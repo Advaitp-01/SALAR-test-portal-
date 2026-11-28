@@ -74,7 +74,7 @@ export const StudentPurchasesView: React.FC = () => {
                     <p className="text-xs text-slate-500 mt-1">
                       {isIsolatedTenant
                         ? 'Explore Courses or Test Series to submit an enrollment request.'
-                        : 'Explore Mathematics Courses or Test Series to submit an enrollment request.'}
+                        : 'Explore PCMB Courses or Test Series to submit an enrollment request.'}
                     </p>
                   </td>
                 </tr>

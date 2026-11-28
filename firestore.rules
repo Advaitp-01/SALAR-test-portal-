@@ -32,7 +32,7 @@ service cloud.firestore {
     function isPrimaryAdmin() {
       return isVerifiedUser()
         && request.auth.token.email is string
-        && request.auth.token.email.lower() in ['gurukulclassestech@gmail.com', 'advaitp38@gmail.com'];
+        && request.auth.token.email.lower() in ['gurukulclassestech@gmail.com'];
     }
 
     function isAdmin() {
@@ -110,7 +110,7 @@ service cloud.firestore {
         && (!('email' in data) || isStr(data.email, 254))
         && (!('mobile' in data) || isStr(data.mobile, 30))
         && (!('whatsapp' in data) || isStr(data.whatsapp, 30))
-        && (!('classLevel' in data) || data.classLevel in ['Class 11th', 'Class 12th', 'Dropper / Repeater'])
+        && (!('classLevel' in data) || data.classLevel in ['Class 7th', 'Class 8th', 'Class 9th', 'Class 10th', 'Class 11th', 'Class 12th', 'Dropper / Repeater'])
         && (!('targetExam' in data) || isStr(data.targetExam, 60))
         && (!('rollNumber' in data) || isStr(data.rollNumber, 40))
         && (!('username' in data) || isStr(data.username, 60))
@@ -150,7 +150,7 @@ service cloud.firestore {
           'facultyName', 'assignedExamIds', 'studentCount', 'status', 'createdAt', 'updatedAt'
         ])
         && isNonEmptyStr(data.name, 120)
-        && data.classLevel in ['Class 11th', 'Class 12th']
+        && data.classLevel in ['Class 7th', 'Class 8th', 'Class 9th', 'Class 10th', 'Class 11th', 'Class 12th']
         && isNonEmptyStr(data.academicYear, 30)
         && data.capacity is number && data.capacity >= 1 && data.capacity <= 1000
         && data.status in ['ACTIVE', 'ARCHIVED']
@@ -189,23 +189,24 @@ service cloud.firestore {
           'positiveMarks', 'negativeMarks', 'difficulty', 'classLevel', 'examCategory'
         ])
         && data.keys().hasOnly([
-          'folderId', 'folderName', 'title', 'questionText', 'questionImageUrl',
+          'folderId', 'folderName', 'subject', 'title', 'questionText', 'questionImageUrl',
           'questionType', 'options', 'correctAnswer', 'explanation', 'positiveMarks',
           'negativeMarks', 'difficulty', 'classLevel', 'chapter', 'topic',
           'examCategory', 'createdAt', 'updatedAt'
         ])
         && isNonEmptyStr(data.title, 250)
-        && isNonEmptyStr(data.questionText, 15000)
+        && (isNonEmptyStr(data.questionText, 15000) || (isStr(data.questionText, 15000) && 'questionImageUrl' in data && isNonEmptyStr(data.questionImageUrl, 800000)))
         && data.questionType in ['SINGLE_MCQ', 'MULTI_MCQ', 'NUMERICAL', 'INTEGER', 'IMAGE_BASED']
         && isStr(data.correctAnswer, 500)
         && data.positiveMarks is number
         && data.negativeMarks is number
         && data.difficulty in ['EASY', 'MEDIUM', 'HARD']
-        && data.classLevel in ['Class 11th', 'Class 12th']
-        && data.examCategory in ['JEE Main', 'JEE Advanced', 'MHT-CET']
+        && data.classLevel in ['Class 7th', 'Class 8th', 'Class 9th', 'Class 10th', 'Class 11th', 'Class 12th']
+        && data.examCategory in ['JEE Main', 'JEE Advanced', 'MHT-CET', 'NEET', 'Foundation']
         && (!('folderId' in data) || isStr(data.folderId, 128))
         && (!('folderName' in data) || isStr(data.folderName, 120))
-        && (!('questionImageUrl' in data) || isStr(data.questionImageUrl, 1000))
+        && (!('subject' in data) || isStr(data.subject, 80))
+        && (!('questionImageUrl' in data) || isStr(data.questionImageUrl, 800000))
         && (!('options' in data) || isValidBoundedList(data.options, 8))
         && (!('explanation' in data) || isStr(data.explanation, 10000))
         && (!('chapter' in data) || isStr(data.chapter, 120))
@@ -224,8 +225,8 @@ service cloud.firestore {
         ])
         && isNonEmptyStr(data.title, 200)
         && isNonEmptyStr(data.code, 40)
-        && data.classLevel in ['Class 11th', 'Class 12th', 'All Classes']
-        && data.target in ['JEE Main', 'JEE Advanced', 'MHT-CET', 'NEET']
+        && data.classLevel in ['Class 7th', 'Class 8th', 'Class 9th', 'Class 10th', 'Class 11th', 'Class 12th', 'All Classes']
+        && data.target in ['JEE Main', 'JEE Advanced', 'MHT-CET', 'NEET', 'Foundation', 'G-PAT']
         && data.durationMinutes is number && data.durationMinutes >= 1 && data.durationMinutes <= 600
         && data.totalMarks is number && data.totalMarks >= 0
         && data.status in ['LIVE', 'DRAFT']
@@ -263,14 +264,14 @@ service cloud.firestore {
         && isValidId(data.examId)
         && data.examStatus in ['LIVE', 'DRAFT']
         && data.orderIndex is number
-        && (isNonEmptyStr(data.questionText, 15000) || (isStr(data.questionText, 15000) && 'questionImageUrl' in data && isNonEmptyStr(data.questionImageUrl, 1000)))
+        && (isNonEmptyStr(data.questionText, 15000) || (isStr(data.questionText, 15000) && 'questionImageUrl' in data && isNonEmptyStr(data.questionImageUrl, 800000)))
         && data.questionType in ['SINGLE_MCQ', 'MULTI_MCQ', 'NUMERICAL', 'INTEGER', 'IMAGE_BASED']
         && isStr(data.correctAnswer, 500)
         && data.positiveMarks is number
         && data.negativeMarks is number
         && (!('title' in data) || isStr(data.title, 250))
         && (!('subject' in data) || isStr(data.subject, 80))
-        && (!('questionImageUrl' in data) || isStr(data.questionImageUrl, 1000))
+        && (!('questionImageUrl' in data) || isStr(data.questionImageUrl, 800000))
         && (!('options' in data) || isValidBoundedList(data.options, 8))
         && (!('explanation' in data) || isStr(data.explanation, 10000))
         && (!('difficulty' in data) || data.difficulty in ['EASY', 'MEDIUM', 'HARD'])
@@ -371,7 +372,7 @@ service cloud.firestore {
           'category', 'fileUrl', 'fileName', 'fileSize', 'downloadCount', 'createdAt', 'updatedAt'
         ])
         && isNonEmptyStr(data.title, 200)
-        && data.classLevel in ['Class 11th', 'Class 12th', 'Both']
+        && data.classLevel in ['Class 7th', 'Class 8th', 'Class 9th', 'Class 10th', 'Class 11th', 'Class 12th', 'Both']
         && isNonEmptyStr(data.subject, 80)
         && data.category in ['Notes', 'Formula Sheets', 'DPP', 'PDF', 'Practice Worksheets']
         && isNonEmptyStr(data.fileUrl, 1000)
@@ -404,18 +405,22 @@ service cloud.firestore {
     function isValidCourse(data) {
       return data.keys().hasAll(['name', 'category', 'price', 'status'])
         && data.keys().hasOnly([
-          'name', 'description', 'category', 'classLevel', 'price',
-          'thumbnailUrl', 'status', 'enrolledCount', 'modules', 'createdAt', 'updatedAt'
+          'name', 'description', 'category', 'classLevel', 'subjectTag', 'duration', 'targetExams',
+          'price', 'thumbnailUrl', 'status', 'enrolledCount', 'modules', 'examIds', 'createdAt', 'updatedAt'
         ])
         && isNonEmptyStr(data.name, 200)
-        && data.category in ['JEE Main', 'JEE Advanced', 'MHT-CET', 'Foundation']
+        && data.category in ['JEE Main', 'JEE Advanced', 'MHT-CET', 'NEET', 'Foundation']
         && data.price is number && data.price >= 0
         && data.status in ['PUBLISHED', 'DRAFT']
         && (!('description' in data) || isStr(data.description, 2000))
-        && (!('classLevel' in data) || isStr(data.classLevel, 40))
+        && (!('classLevel' in data) || isStr(data.classLevel, 60))
+        && (!('subjectTag' in data) || isStr(data.subjectTag, 120))
+        && (!('duration' in data) || isStr(data.duration, 60))
+        && (!('targetExams' in data) || isStr(data.targetExams, 200))
         && (!('thumbnailUrl' in data) || isStr(data.thumbnailUrl, 1000))
         && (!('enrolledCount' in data) || data.enrolledCount is number)
         && (!('modules' in data) || isValidBoundedList(data.modules, 40))
+        && (!('examIds' in data) || isValidBoundedList(data.examIds, 100))
         && (!('createdAt' in data) || isStr(data.createdAt, 64))
         && (!('updatedAt' in data) || isStr(data.updatedAt, 64));
     }
@@ -429,10 +434,14 @@ service cloud.firestore {
         && isNonEmptyStr(data.title, 200)
         && data.price is number && data.price >= 0
         && data.mockTestCount is number && data.mockTestCount >= 0
-        && data.examCategory in ['JEE Main Mathematics', 'JEE Advanced Mathematics', 'MHT-CET Mathematics']
+        && data.examCategory in [
+          'IIT-JEE', 'JEE Main', 'JEE Advanced', 'MHT-CET', 'NEET', 'G-PAT', 'Foundation',
+          'JEE Main PCMB', 'JEE Advanced PCMB', 'MHT-CET PCMB', 'NEET PCB', 'PCMB Foundation',
+          'JEE Main Mathematics', 'JEE Advanced Mathematics', 'MHT-CET Mathematics'
+        ]
         && data.status in ['PUBLISHED', 'DRAFT']
         && (!('description' in data) || isStr(data.description, 2000))
-        && (!('classLevel' in data) || isStr(data.classLevel, 40))
+        && (!('classLevel' in data) || isStr(data.classLevel, 60))
         && (!('examIds' in data) || isValidBoundedList(data.examIds, 100))
         && (!('createdAt' in data) || isStr(data.createdAt, 64))
         && (!('updatedAt' in data) || isStr(data.updatedAt, 64));
@@ -629,7 +638,9 @@ service cloud.firestore {
     // Study Materials
     match /studyMaterials/{materialId} {
       allow get: if isValidId(materialId) && isSignedIn();
-      allow list: if isPrimaryAdmin() || (isSignedIn() && resource.data.subject == 'Mathematics');
+      allow list: if isPrimaryAdmin() || (isSignedIn() && resource.data.subject in [
+        'Physics', 'Chemistry', 'Mathematics', 'Biology', 'PCMB', 'Combined PCMB', 'Combined PCM', 'General'
+      ]);
       allow create: if isValidId(materialId) && isAdmin() && isValidStudyMaterial(incoming());
       allow update: if isValidId(materialId) && isValidStudyMaterial(incoming()) && (
         isAdmin() ||

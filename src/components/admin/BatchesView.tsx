@@ -157,7 +157,7 @@ export const BatchesView: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="font-display text-2xl font-bold text-[#0F172A]">Batch Management</h1>
-          <p className="text-sm text-slate-500">Organize Class 11th &amp; 12th Mathematics batches, capacity, and exam assignments</p>
+          <p className="text-sm text-slate-500">Organize Class 11th &amp; 12th PCMB batches, capacity, and exam assignments</p>
         </div>
         <button
           type="button"
@@ -173,7 +173,7 @@ export const BatchesView: React.FC = () => {
         <div className="bg-white border border-[#E2E8F0] rounded-xl p-10 text-center">
           <Layers className="w-10 h-10 text-slate-400 mx-auto mb-3" />
           <h3 className="font-display font-bold text-base text-[#0F172A]">No Batches Created</h3>
-          <p className="text-xs text-slate-500 mt-1 mb-4">Create Class 11th or Class 12th Mathematics batches to group students.</p>
+          <p className="text-xs text-slate-500 mt-1 mb-4">Create Class 11th or Class 12th PCMB batches to group students.</p>
           <button type="button" onClick={openAdd} className="px-4 py-2 text-xs font-semibold text-white bg-[#0032A0] rounded-lg">
             Create First Batch
           </button>
@@ -266,7 +266,7 @@ export const BatchesView: React.FC = () => {
           <div className="bg-white border border-[#E2E8F0] rounded-xl w-full max-w-lg max-h-[92dvh] overflow-y-auto p-4 sm:p-6 space-y-4">
             <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
               <h3 className="font-display font-bold text-base text-[#0F172A]">
-                {editing ? 'Edit Batch' : 'Create Mathematics Batch'}
+                {editing ? 'Edit Batch' : 'Create PCMB Batch'}
               </h3>
               <button type="button" onClick={() => setModalOpen(false)} className="text-slate-400">
                 <X className="w-5 h-5" />

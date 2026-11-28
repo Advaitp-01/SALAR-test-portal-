@@ -15,7 +15,7 @@ export const FacultyView: React.FC = () => {
 
   const [name, setName] = useState('');
   const [qualification, setQualification] = useState('');
-  const [subjectSpecialization, setSubjectSpecialization] = useState('Mathematics');
+  const [subjectSpecialization, setSubjectSpecialization] = useState('Physics, Chemistry, Mathematics & Biology');
   const [experience, setExperience] = useState('');
   const [email, setEmail] = useState('');
   const [contactNumber, setContactNumber] = useState('');
@@ -44,7 +44,7 @@ export const FacultyView: React.FC = () => {
     setEditing(null);
     setName('');
     setQualification('');
-    setSubjectSpecialization('Mathematics (Calculus & Algebra)');
+    setSubjectSpecialization('Physics / Chemistry / Mathematics / Biology');
     setExperience('');
     setEmail('');
     setContactNumber('');
@@ -127,7 +127,7 @@ export const FacultyView: React.FC = () => {
         <div>
           <h1 className="font-display text-2xl font-bold text-[#0F172A]">Faculty Directory</h1>
           <p className="text-sm text-slate-500">
-            Mathematics department faculty management directory (administrative roster only)
+            PCMB (Physics, Chemistry, Mathematics &amp; Biology) department faculty directory
           </p>
         </div>
         <button
@@ -144,7 +144,7 @@ export const FacultyView: React.FC = () => {
         <div className="bg-white border border-[#E2E8F0] rounded-xl p-10 text-center">
           <GraduationCap className="w-10 h-10 text-slate-400 mx-auto mb-3" />
           <h3 className="font-display font-bold text-base text-[#0F172A]">No Faculty Profiles Yet</h3>
-          <p className="text-xs text-slate-500 mt-1 mb-4">Add Mathematics professors and mentors to assign them to batches.</p>
+          <p className="text-xs text-slate-500 mt-1 mb-4">Add Physics, Chemistry, Mathematics &amp; Biology professors to assign them to batches.</p>
           <button
             type="button"
             onClick={openAdd}
@@ -232,7 +232,7 @@ export const FacultyView: React.FC = () => {
           <div className="bg-white border border-[#E2E8F0] rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 space-y-4">
             <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
               <h3 className="font-display font-bold text-base text-[#0F172A]">
-                {editing ? 'Edit Faculty Profile' : 'Add Mathematics Faculty'}
+                {editing ? 'Edit Faculty Profile' : 'Add PCMB Faculty'}
               </h3>
               <button type="button" onClick={() => setModalOpen(false)} className="text-slate-400">
                 <X className="w-5 h-5" />
@@ -257,7 +257,7 @@ export const FacultyView: React.FC = () => {
                     required
                     value={qualification}
                     onChange={(e) => setQualification(e.target.value)}
-                    placeholder="M.Sc. Mathematics, IIT"
+                    placeholder="M.Sc. / M.Tech / Ph.D. (IIT / NIT)"
                     className="w-full px-3 py-2 text-sm border border-[#E2E8F0] rounded-lg"
                   />
                 </div>
@@ -273,7 +273,9 @@ export const FacultyView: React.FC = () => {
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Subject Specialization (Maths)</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Subject Specialization (Physics / Chemistry / Maths / Biology)
+                </label>
                 <input
                   type="text"
                   required

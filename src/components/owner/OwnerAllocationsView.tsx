@@ -79,6 +79,7 @@ export const OwnerAllocationsView: React.FC<OwnerAllocationsViewProps> = ({
   const [newCity, setNewCity] = useState('');
   const [newPlanCode, setNewPlanCode] = useState<PlanCode>('PRO');
   const [newBillingCycle, setNewBillingCycle] = useState<BillingCycle>('YEARLY');
+  const [newTrialDays, setNewTrialDays] = useState('14');
   const [newAdminPasscode, setNewAdminPasscode] = useState('');
   const [reassignedPortalPath, setReassignedPortalPath] = useState('');
   const [copiedId, setCopiedId] = useState('');
@@ -156,6 +157,8 @@ export const OwnerAllocationsView: React.FC<OwnerAllocationsViewProps> = ({
         newCity: targetMode === 'NEW_CLIENT' ? newCity : undefined,
         newPlanCode,
         newBillingCycle,
+        newTrialDays: newBillingCycle === 'TRIAL' ? Number(newTrialDays) || 14 : undefined,
+        newCustomDays: newBillingCycle === 'CUSTOM' ? Number(newTrialDays) || 30 : undefined,
         initialAdminPasscode: targetMode === 'NEW_CLIENT' && newAdminPasscode.trim() ? newAdminPasscode.trim() : undefined,
       });
       setStepsReport(res.stepsReport);
@@ -648,12 +651,28 @@ export const OwnerAllocationsView: React.FC<OwnerAllocationsViewProps> = ({
                           onChange={(e) => setNewBillingCycle(e.target.value as BillingCycle)}
                           className="w-full px-3 py-2 text-sm border border-[#E2E8F0] rounded-lg bg-white"
                         >
+                          <option value="TRIAL">TRIAL (Free Trial)</option>
                           <option value="MONTHLY">MONTHLY</option>
                           <option value="QUARTERLY">QUARTERLY</option>
                           <option value="YEARLY">YEARLY</option>
+                          <option value="CUSTOM">CUSTOM</option>
                         </select>
                       </div>
                     </div>
+                    {(newBillingCycle === 'TRIAL' || newBillingCycle === 'CUSTOM') && (
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          {newBillingCycle === 'TRIAL' ? 'Trial Duration (Days)' : 'Custom Validity (Days)'}
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          value={newTrialDays}
+                          onChange={(e) => setNewTrialDays(e.target.value)}
+                          className="w-full px-3 py-2 text-sm font-mono border border-[#E2E8F0] rounded-lg bg-white"
+                        />
+                      </div>
+                    )}
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 mb-1">
                         Initial Client Admin Gate Passcode (Optional)

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Bell, Check, Download, FileText, Save, Search, Settings } from 'lucide-react';
 import { salarApi } from '../../lib/salarApi';
 import type { OwnerBootstrapData, SystemSettings } from '../../types/salar';
@@ -16,6 +16,10 @@ export const OwnerOperationsView: React.FC<OwnerOperationsViewProps> = ({ mode, 
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
+
+  useEffect(() => {
+    setSettingsForm(data.systemSettings);
+  }, [data.systemSettings]);
 
   const handleMarkRead = async (id: string) => {
     await salarApi.markNotificationRead(id);

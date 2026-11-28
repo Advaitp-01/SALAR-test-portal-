@@ -1,13 +1,16 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { addDoc, collection, deleteDoc, doc, onSnapshot, updateDoc, writeBatch } from '../../lib/tenantDb';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { addDoc, collection, deleteDoc, doc, notifyCloudAuthNeeded, onSnapshot, updateDoc, writeBatch } from '../../lib/tenantDb';
 import {
   Check,
+  CheckCircle2,
   Database,
   Edit2,
   Eye,
   FileUp,
   FolderPlus,
   Image as ImageIcon,
+  ImagePlus,
+  KeyRound,
   Plus,
   ScanText,
   Search,
@@ -16,7 +19,13 @@ import {
   X,
 } from 'lucide-react';
 import { db } from '../../lib/firebase';
-import { handleFirestoreError, OperationType } from '../../lib/firestoreError';
+import { useAuth } from '../../context/AuthContext';
+import {
+  isValidImageFile,
+  parseQuickAnswerKeys,
+  sortImageFilesNaturally,
+  type BulkImageDraft,
+} from '../../lib/bulkImageUtils';
 import { extractMathQuestionsWithOCR, uploadFileToServer } from '../../lib/portalService';
 import { MathText } from '../MathText';
 import type { Question, QuestionFolder, QuestionOption, QuestionType } from '../../types/portal';
@@ -36,14 +45,24 @@ const MATH_SNIPPETS = [
 ];
 
 export const QuestionBankView: React.FC = () => {
+  const { firebaseUser, isIsolatedTenant, cloudAuthNeeded, signInWithGoogle } = useAuth();
+  const needsCloudAuth = !isIsolatedTenant && (!firebaseUser || cloudAuthNeeded);
   const [folders, setFolders] = useState<QuestionFolder[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
 
   const [selectedFolderId, setSelectedFolderId] = useState<string>('ALL');
   const [search, setSearch] = useState('');
   const [classFilter, setClassFilter] = useState('ALL');
+  const [subjectFilter, setSubjectFilter] = useState('ALL');
   const [catFilter, setCatFilter] = useState('ALL');
   const [diffFilter, setDiffFilter] = useState('ALL');
+
+  const [pageError, setPageError] = useState('');
+  const [folderError, setFolderError] = useState('');
+  const [qFormError, setQFormError] = useState('');
+  const [savingFolder, setSavingFolder] = useState(false);
+  const [savingQ, setSavingQ] = useState(false);
+  const [linkingCloud, setLinkingCloud] = useState(false);
 
   // Modals
   const [folderModal, setFolderModal] = useState(false);
@@ -68,6 +87,21 @@ export const QuestionBankView: React.FC = () => {
   const [answerKeyText, setAnswerKeyText] = useState('');
   const [bulkError, setBulkError] = useState('');
 
+  // Bulk Upload Images (Fast) Modal
+  const [bulkImgModal, setBulkImgModal] = useState(false);
+  const [bulkImages, setBulkImages] = useState<BulkImageDraft[]>([]);
+  const [bulkKeyPaste, setBulkKeyPaste] = useState('');
+  const [bulkImgDragOver, setBulkImgDragOver] = useState(false);
+  const [bulkImgSaving, setBulkImgSaving] = useState(false);
+  const [bulkImgStatus, setBulkImgStatus] = useState('');
+  const [bulkImgError, setBulkImgError] = useState('');
+  const [bulkImgSuccess, setBulkImgSuccess] = useState('');
+  const [bulkImgFolderId, setBulkImgFolderId] = useState('');
+  const [bulkImgClass, setBulkImgClass] = useState<'Class 11th' | 'Class 12th'>('Class 12th');
+  const [bulkImgSubject, setBulkImgSubject] = useState('Combined PCMB');
+  const [bulkImgCat, setBulkImgCat] = useState<Question['examCategory']>('JEE Main');
+  const bulkImgInputRef = useRef<HTMLInputElement | null>(null);
+
   // Question form state
   const [title, setTitle] = useState('');
   const [questionText, setQuestionText] = useState('');
@@ -85,33 +119,86 @@ export const QuestionBankView: React.FC = () => {
   const [negativeMarks, setNegativeMarks] = useState(1);
   const [difficulty, setDifficulty] = useState<'EASY' | 'MEDIUM' | 'HARD'>('MEDIUM');
   const [classLevel, setClassLevel] = useState<'Class 11th' | 'Class 12th'>('Class 12th');
+  const [subject, setSubject] = useState('Combined PCMB');
   const [chapter, setChapter] = useState('');
   const [topic, setTopic] = useState('');
-  const [examCategory, setExamCategory] = useState<'JEE Main' | 'JEE Advanced' | 'MHT-CET'>('JEE Main');
+  const [examCategory, setExamCategory] = useState<Question['examCategory']>('JEE Main');
   const [qFolderId, setQFolderId] = useState('');
   const [uploadingImg, setUploadingImg] = useState(false);
+
+  const formatActionError = useCallback(
+    (err: unknown, fallback: string): string => {
+      const raw = err instanceof Error ? err.message : String(err || '');
+      let msg = raw;
+      try {
+        const parsed = JSON.parse(raw) as { error?: string };
+        if (parsed && typeof parsed.error === 'string' && parsed.error.trim()) {
+          msg = parsed.error.trim();
+        }
+      } catch {
+        // non-JSON
+      }
+      const lower = msg.toLowerCase();
+      if (
+        !isIsolatedTenant &&
+        (lower.includes('permission-denied') || lower.includes('missing or insufficient permissions'))
+      ) {
+        if (!firebaseUser) {
+          notifyCloudAuthNeeded(msg);
+          return 'Cloud Firestore requires your authorized Google admin account before saving. Click "Link Cloud Account Now" below and try again.';
+        }
+        return 'Firestore permission denied. Please confirm you are signed in with an authorized admin email.';
+      }
+      return msg || fallback;
+    },
+    [firebaseUser, isIsolatedTenant]
+  );
+
+  const handleInlineLinkCloud = async () => {
+    setLinkingCloud(true);
+    try {
+      const res = await signInWithGoogle('SUPER_ADMIN');
+      if (res.error) {
+        setPageError(res.error);
+      } else {
+        setPageError('');
+        setFolderError('');
+        setQFormError('');
+        setOcrError('');
+      }
+    } finally {
+      setLinkingCloud(false);
+    }
+  };
 
   useEffect(() => {
     const u1 = onSnapshot(
       collection(db, 'questionFolders'),
       (snap) => setFolders(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<QuestionFolder, 'id'>) }))),
-      (err) => handleFirestoreError(err, OperationType.LIST, 'questionFolders')
+      (err) => {
+        const msg = formatActionError(err, 'Unable to load question folders.');
+        setPageError(msg);
+      }
     );
     const u2 = onSnapshot(
       collection(db, 'questions'),
       (snap) => setQuestions(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Question, 'id'>) }))),
-      (err) => handleFirestoreError(err, OperationType.LIST, 'questions')
+      (err) => {
+        const msg = formatActionError(err, 'Unable to load question bank.');
+        setPageError(msg);
+      }
     );
     return () => {
       u1();
       u2();
     };
-  }, []);
+  }, [formatActionError]);
 
   const filteredQuestions = useMemo(() => {
     return questions.filter((q) => {
       if (selectedFolderId !== 'ALL' && q.folderId !== selectedFolderId) return false;
       if (classFilter !== 'ALL' && q.classLevel !== classFilter) return false;
+      if (subjectFilter !== 'ALL' && (q.subject || 'Combined PCMB') !== subjectFilter) return false;
       if (catFilter !== 'ALL' && q.examCategory !== catFilter) return false;
       if (diffFilter !== 'ALL' && q.difficulty !== diffFilter) return false;
       if (search.trim()) {
@@ -119,17 +206,23 @@ export const QuestionBankView: React.FC = () => {
         return (
           q.title.toLowerCase().includes(s) ||
           q.questionText.toLowerCase().includes(s) ||
+          (q.subject || '').toLowerCase().includes(s) ||
           (q.chapter || '').toLowerCase().includes(s) ||
           (q.topic || '').toLowerCase().includes(s)
         );
       }
       return true;
     });
-  }, [questions, selectedFolderId, classFilter, catFilter, diffFilter, search]);
+  }, [questions, selectedFolderId, classFilter, subjectFilter, catFilter, diffFilter, search]);
 
   const handleCreateFolder = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!folderName.trim()) return;
+    if (!folderName.trim()) {
+      setFolderError('Folder name is required.');
+      return;
+    }
+    setFolderError('');
+    setSavingFolder(true);
     try {
       await addDoc(collection(db, 'questionFolders'), {
         name: folderName.trim(),
@@ -142,21 +235,25 @@ export const QuestionBankView: React.FC = () => {
       setFolderChapter('');
       setFolderModal(false);
     } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, 'questionFolders');
+      setFolderError(formatActionError(err, 'Unable to create question folder.'));
+    } finally {
+      setSavingFolder(false);
     }
   };
 
   const handleDeleteFolder = async (id: string) => {
+    setPageError('');
     try {
       await deleteDoc(doc(db, 'questionFolders', id));
       if (selectedFolderId === id) setSelectedFolderId('ALL');
     } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `questionFolders/${id}`);
+      setPageError(formatActionError(err, 'Unable to delete question folder.'));
     }
   };
 
   const openAddQuestion = () => {
     setEditingQ(null);
+    setQFormError('');
     setTitle('');
     setQuestionText('');
     setQuestionImageUrl('');
@@ -173,6 +270,7 @@ export const QuestionBankView: React.FC = () => {
     setNegativeMarks(1);
     setDifficulty('MEDIUM');
     setClassLevel('Class 12th');
+    setSubject('Combined PCMB');
     setChapter('');
     setTopic('');
     setExamCategory('JEE Main');
@@ -182,6 +280,7 @@ export const QuestionBankView: React.FC = () => {
 
   const openEditQuestion = (q: Question) => {
     setEditingQ(q);
+    setQFormError('');
     setTitle(q.title);
     setQuestionText(q.questionText);
     setQuestionImageUrl(q.questionImageUrl || '');
@@ -202,6 +301,7 @@ export const QuestionBankView: React.FC = () => {
     setNegativeMarks(q.negativeMarks);
     setDifficulty(q.difficulty);
     setClassLevel(q.classLevel);
+    setSubject(q.subject || 'Combined PCMB');
     setChapter(q.chapter || '');
     setTopic(q.topic || '');
     setExamCategory(q.examCategory);
@@ -211,11 +311,15 @@ export const QuestionBankView: React.FC = () => {
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.currentTarget.value = '';
     if (!file) return;
+    setQFormError('');
     setUploadingImg(true);
     try {
       const res = await uploadFileToServer(file);
       setQuestionImageUrl(res.url);
+    } catch (err) {
+      setQFormError(err instanceof Error ? err.message : 'Image upload failed. Please try a smaller image.');
     } finally {
       setUploadingImg(false);
     }
@@ -223,13 +327,18 @@ export const QuestionBankView: React.FC = () => {
 
   const handleSaveQuestion = async (e: React.FormEvent) => {
     e.preventDefault();
+    setQFormError('');
+    if (!questionText.trim() && !questionImageUrl.trim()) {
+      setQFormError('Please enter question text or upload a question diagram/image.');
+      return;
+    }
     const now = new Date().toISOString();
     const folder = folders.find((f) => f.id === qFolderId);
     const isMcq = questionType === 'SINGLE_MCQ' || questionType === 'MULTI_MCQ' || questionType === 'IMAGE_BASED';
     const payload = {
       folderId: qFolderId || '',
       folderName: folder?.name || 'General',
-      title: title.trim() || questionText.slice(0, 80),
+      title: title.trim() || questionText.trim().slice(0, 80) || 'Image Question',
       questionText: questionText.trim(),
       questionImageUrl: questionImageUrl.trim(),
       questionType,
@@ -240,11 +349,13 @@ export const QuestionBankView: React.FC = () => {
       negativeMarks: Number(negativeMarks),
       difficulty,
       classLevel,
+      subject: subject || 'Combined PCMB',
       chapter: chapter.trim(),
       topic: topic.trim(),
       examCategory,
       updatedAt: now,
     };
+    setSavingQ(true);
     try {
       if (editingQ) {
         await updateDoc(doc(db, 'questions', editingQ.id), payload);
@@ -253,15 +364,18 @@ export const QuestionBankView: React.FC = () => {
       }
       setQModal(false);
     } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, 'questions');
+      setQFormError(formatActionError(err, 'Unable to save question.'));
+    } finally {
+      setSavingQ(false);
     }
   };
 
   const handleDeleteQuestion = async (id: string) => {
+    setPageError('');
     try {
       await deleteDoc(doc(db, 'questions', id));
     } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `questions/${id}`);
+      setPageError(formatActionError(err, 'Unable to delete question.'));
     }
   };
 
@@ -294,6 +408,7 @@ export const QuestionBankView: React.FC = () => {
           positiveMarks: q.positiveMarks ?? 4,
           negativeMarks: q.negativeMarks ?? 1,
           classLevel,
+          subject: q.subject || subject || 'Combined PCMB',
           examCategory,
         }))
       );
@@ -306,34 +421,43 @@ export const QuestionBankView: React.FC = () => {
 
   const handleCommitOcrDrafts = async () => {
     if (ocrDrafts.length === 0) return;
-    const now = new Date().toISOString();
-    const folder = folders.find((f) => f.id === selectedFolderId);
-    const batch = writeBatch(db);
-    ocrDrafts.forEach((d) => {
-      batch.set(doc(collection(db, 'questions')), {
-        folderId: selectedFolderId === 'ALL' ? '' : selectedFolderId,
-        folderName: folder?.name || 'OCR Imported',
-        title: d.title || 'Mathematics Question',
-        questionText: d.questionText || '',
-        questionImageUrl: '',
-        questionType: d.questionType || 'SINGLE_MCQ',
-        options: d.options || [],
-        correctAnswer: d.correctAnswer || '',
-        explanation: d.explanation || '',
-        positiveMarks: Number(d.positiveMarks ?? 4),
-        negativeMarks: Number(d.negativeMarks ?? 1),
-        difficulty: d.difficulty || 'MEDIUM',
-        classLevel: (d.classLevel as 'Class 11th' | 'Class 12th') || 'Class 12th',
-        chapter: d.chapter || '',
-        topic: d.topic || '',
-        examCategory: (d.examCategory as 'JEE Main' | 'JEE Advanced' | 'MHT-CET') || 'JEE Main',
-        createdAt: now,
-        updatedAt: now,
+    setOcrError('');
+    setOcrLoading(true);
+    try {
+      const now = new Date().toISOString();
+      const folder = folders.find((f) => f.id === selectedFolderId);
+      const batch = writeBatch(db);
+      ocrDrafts.forEach((d) => {
+        batch.set(doc(collection(db, 'questions')), {
+          folderId: selectedFolderId === 'ALL' ? '' : selectedFolderId,
+          folderName: folder?.name || 'OCR Imported',
+          title: d.title || 'PCMB Question',
+          questionText: d.questionText || '',
+          questionImageUrl: '',
+          questionType: d.questionType || 'SINGLE_MCQ',
+          options: d.options || [],
+          correctAnswer: d.correctAnswer || '',
+          explanation: d.explanation || '',
+          positiveMarks: Number(d.positiveMarks ?? 4),
+          negativeMarks: Number(d.negativeMarks ?? 1),
+          difficulty: d.difficulty || 'MEDIUM',
+          classLevel: (d.classLevel as 'Class 11th' | 'Class 12th') || 'Class 12th',
+          subject: d.subject || subject || 'Combined PCMB',
+          chapter: d.chapter || '',
+          topic: d.topic || '',
+          examCategory: (d.examCategory as Question['examCategory']) || 'JEE Main',
+          createdAt: now,
+          updatedAt: now,
+        });
       });
-    });
-    await batch.commit();
-    setOcrDrafts([]);
-    setOcrModal(false);
+      await batch.commit();
+      setOcrDrafts([]);
+      setOcrModal(false);
+    } catch (err) {
+      setOcrError(formatActionError(err, 'Failed to save OCR questions to Question Bank.'));
+    } finally {
+      setOcrLoading(false);
+    }
   };
 
   // Bulk JSON + Answer Key Import
@@ -374,6 +498,7 @@ export const QuestionBankView: React.FC = () => {
           negativeMarks: Number(item.negativeMarks ?? 1),
           difficulty: item.difficulty || 'MEDIUM',
           classLevel: item.classLevel || 'Class 12th',
+          subject: item.subject || subject || 'Combined PCMB',
           chapter: item.chapter || '',
           topic: item.topic || '',
           examCategory: item.examCategory || 'JEE Main',
@@ -390,14 +515,158 @@ export const QuestionBankView: React.FC = () => {
     }
   };
 
+  const clearBulkImageModalDrafts = useCallback(() => {
+    setBulkImages((prev) => {
+      prev.forEach((item) => {
+        if (item.previewUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(item.previewUrl);
+        }
+      });
+      return [];
+    });
+    setBulkKeyPaste('');
+    setBulkImgStatus('');
+    setBulkImgError('');
+    if (bulkImgInputRef.current) bulkImgInputRef.current.value = '';
+  }, []);
+
+  const openBulkImageModal = () => {
+    clearBulkImageModalDrafts();
+    setBulkImgSuccess('');
+    setBulkImgFolderId(selectedFolderId === 'ALL' ? '' : selectedFolderId);
+    setBulkImgModal(true);
+  };
+
+  const closeBulkImageModal = () => {
+    clearBulkImageModalDrafts();
+    setBulkImgModal(false);
+  };
+
+  const handleAddBankBulkImages = (fileList: FileList | File[]) => {
+    const valid = sortImageFilesNaturally(Array.from(fileList).filter(isValidImageFile));
+    if (valid.length === 0) {
+      setBulkImgError('Please select valid question images (PNG, JPG, JPEG, WebP).');
+      return;
+    }
+    setBulkImgError('');
+    const drafts: BulkImageDraft[] = valid.map((file, idx) => ({
+      id: `qb_blk_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 7)}`,
+      file,
+      fileName: file.name,
+      previewUrl: URL.createObjectURL(file),
+      answerKey: 'A',
+    }));
+    setBulkImages((prev) => {
+      const combined = [...prev, ...drafts];
+      combined.sort((a, b) =>
+        a.fileName.localeCompare(b.fileName, undefined, { numeric: true, sensitivity: 'base' })
+      );
+      return combined;
+    });
+    setBulkImgSuccess(`Prepared ${valid.length} image(s) in numeric order!`);
+  };
+
+  const handleApplyBankBulkKeys = () => {
+    if (bulkImages.length === 0) return;
+    const parsed = parseQuickAnswerKeys(bulkKeyPaste, bulkImages.length);
+    if (parsed.size === 0) {
+      setBulkImgError('Could not recognize answer keys. Try formats like "A,B,C,D" or "1.A 2.B 3.C".');
+      return;
+    }
+    setBulkImgError('');
+    setBulkImages((prev) =>
+      prev.map((item, idx) => ({
+        ...item,
+        answerKey: parsed.get(idx) || item.answerKey,
+      }))
+    );
+    setBulkImgSuccess(`Applied ${parsed.size} answer key(s) cleanly!`);
+  };
+
+  const handleCommitBankBulkImages = async () => {
+    if (bulkImages.length === 0) {
+      setBulkImgError('Please drop or select at least 1 question image first.');
+      return;
+    }
+    setBulkImgError('');
+    setBulkImgSuccess('');
+    setBulkImgSaving(true);
+    const total = bulkImages.length;
+    const now = new Date().toISOString();
+    const folder = folders.find((f) => f.id === bulkImgFolderId);
+
+    try {
+      const uploadedUrls: string[] = new Array(total);
+      let completedUploads = 0;
+      const CONCURRENCY = 4;
+
+      for (let start = 0; start < total; start += CONCURRENCY) {
+        const slice = bulkImages.slice(start, start + CONCURRENCY);
+        await Promise.all(
+          slice.map(async (item, offset) => {
+            const res = await uploadFileToServer(item.file);
+            uploadedUrls[start + offset] = res.url;
+            completedUploads += 1;
+            setBulkImgStatus(`Preparing images ${completedUploads}/${total}...`);
+          })
+        );
+      }
+
+      const CHUNK_SIZE = 8;
+      for (let chunkStart = 0; chunkStart < total; chunkStart += CHUNK_SIZE) {
+        const chunkEnd = Math.min(total, chunkStart + CHUNK_SIZE);
+        setBulkImgStatus(`Syncing Q${chunkStart + 1}–Q${chunkEnd} of ${total} to Question Bank...`);
+        const batch = writeBatch(db);
+        for (let i = chunkStart; i < chunkEnd; i += 1) {
+          const item = bulkImages[i];
+          const ref = doc(collection(db, 'questions'));
+          batch.set(ref, {
+            folderId: bulkImgFolderId || '',
+            folderName: folder?.name || 'Bulk Image Upload',
+            title: `Question ${i + 1} (${item.fileName.replace(/\.[^.]+$/, '').slice(0, 60)})`,
+            questionText: '',
+            questionImageUrl: uploadedUrls[i],
+            questionType: 'IMAGE_BASED',
+            options: [
+              { id: 'A', text: '' },
+              { id: 'B', text: '' },
+              { id: 'C', text: '' },
+              { id: 'D', text: '' },
+            ],
+            correctAnswer: item.answerKey,
+            explanation: '',
+            positiveMarks: 4,
+            negativeMarks: 1,
+            difficulty: 'MEDIUM',
+            classLevel: bulkImgClass,
+            subject: bulkImgSubject || 'Combined PCMB',
+            chapter: folder?.chapter || '',
+            topic: '',
+            examCategory: bulkImgCat,
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+        await batch.commit();
+      }
+
+      closeBulkImageModal();
+    } catch (err) {
+      setBulkImgError(formatActionError(err, 'Failed to save bulk question images.'));
+    } finally {
+      setBulkImgStatus('');
+      setBulkImgSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
-          <h1 className="font-display text-2xl font-bold text-[#0F172A]">Mathematics Question Bank</h1>
+          <h1 className="font-display text-2xl font-bold text-[#0F172A]">PCMB Question Bank</h1>
           <p className="text-sm text-slate-500">
-            KaTeX-ready JEE Main, JEE Advanced &amp; MHT-CET problem repository with AI Mathematical OCR
+            KaTeX-ready Physics, Chemistry, Mathematics &amp; Biology (PCMB) repository for JEE, MHT-CET &amp; NEET with AI STEM OCR
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -408,6 +677,14 @@ export const QuestionBankView: React.FC = () => {
           >
             <FolderPlus className="w-4 h-4" />
             New Folder
+          </button>
+          <button
+            type="button"
+            onClick={openBulkImageModal}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-[#059669] rounded-lg"
+          >
+            <ImagePlus className="w-4 h-4" />
+            Bulk Images
           </button>
           <button
             type="button"
@@ -423,7 +700,7 @@ export const QuestionBankView: React.FC = () => {
             className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold border border-blue-200 bg-blue-50 hover:bg-blue-100 text-[#0032A0] rounded-lg"
           >
             <ScanText className="w-4 h-4" />
-            PDF / Image Math OCR
+            PDF / Image PCMB OCR
           </button>
           <button
             type="button"
@@ -435,6 +712,22 @@ export const QuestionBankView: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {pageError && (
+        <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex flex-wrap items-center justify-between gap-2">
+          <span>{pageError}</span>
+          {needsCloudAuth && (
+            <button
+              type="button"
+              disabled={linkingCloud}
+              onClick={handleInlineLinkCloud}
+              className="px-3 py-1.5 bg-[#0032A0] text-white rounded-lg font-semibold hover:bg-[#00257a] disabled:opacity-60"
+            >
+              {linkingCloud ? 'Linking...' : 'Link Cloud Account Now'}
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Folder Sidebar */}
@@ -496,6 +789,18 @@ export const QuestionBankView: React.FC = () => {
               />
             </div>
             <select
+              value={subjectFilter}
+              onChange={(e) => setSubjectFilter(e.target.value)}
+              className="px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg bg-white"
+            >
+              <option value="ALL">All PCMB Subjects</option>
+              <option value="Physics">Physics</option>
+              <option value="Chemistry">Chemistry</option>
+              <option value="Mathematics">Mathematics</option>
+              <option value="Biology">Biology</option>
+              <option value="Combined PCMB">Combined PCMB</option>
+            </select>
+            <select
               value={classFilter}
               onChange={(e) => setClassFilter(e.target.value)}
               className="px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg bg-white"
@@ -513,6 +818,8 @@ export const QuestionBankView: React.FC = () => {
               <option value="JEE Main">JEE Main</option>
               <option value="JEE Advanced">JEE Advanced</option>
               <option value="MHT-CET">MHT-CET</option>
+              <option value="NEET">NEET</option>
+              <option value="Foundation">Foundation</option>
             </select>
             <select
               value={diffFilter}
@@ -530,7 +837,7 @@ export const QuestionBankView: React.FC = () => {
             <div className="bg-white border border-[#E2E8F0] rounded-xl p-10 text-center">
               <Database className="w-10 h-10 text-slate-400 mx-auto mb-3" />
               <p className="font-display font-bold text-base text-[#0F172A]">No Questions Found</p>
-              <p className="text-xs text-slate-500 mt-1">Create a question manually or run Mathematical OCR extraction.</p>
+              <p className="text-xs text-slate-500 mt-1">Create a PCMB question manually or run STEM OCR extraction.</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -540,6 +847,8 @@ export const QuestionBankView: React.FC = () => {
                     <div>
                       <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-slate-500 mb-1">
                         <span className="font-semibold text-[#0032A0]">Q{idx + 1}</span>
+                        <span aria-hidden="true">·</span>
+                        <span className="font-semibold text-slate-700">{q.subject || 'PCMB'}</span>
                         <span aria-hidden="true">·</span>
                         <span>{q.questionType}</span>
                         <span aria-hidden="true">·</span>
@@ -642,6 +951,21 @@ export const QuestionBankView: React.FC = () => {
               </button>
             </div>
             <form onSubmit={handleCreateFolder} className="space-y-3">
+              {folderError && (
+                <div className="p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 space-y-2">
+                  <p>{folderError}</p>
+                  {needsCloudAuth && (
+                    <button
+                      type="button"
+                      disabled={linkingCloud}
+                      onClick={handleInlineLinkCloud}
+                      className="px-2.5 py-1 bg-[#0032A0] text-white rounded font-semibold hover:bg-[#00257a] disabled:opacity-60"
+                    >
+                      {linkingCloud ? 'Linking...' : 'Link Cloud Account Now'}
+                    </button>
+                  )}
+                </div>
+              )}
               <input
                 type="text"
                 required
@@ -671,8 +995,8 @@ export const QuestionBankView: React.FC = () => {
                 <button type="button" onClick={() => setFolderModal(false)} className="px-4 py-2 text-xs font-semibold border border-[#E2E8F0] rounded-lg">
                   Cancel
                 </button>
-                <button type="submit" className="px-4 py-2 text-xs font-semibold bg-[#0032A0] text-white rounded-lg">
-                  Create Folder
+                <button type="submit" disabled={savingFolder} className="px-4 py-2 text-xs font-semibold bg-[#0032A0] text-white rounded-lg disabled:opacity-60">
+                  {savingFolder ? 'Creating...' : 'Create Folder'}
                 </button>
               </div>
             </form>
@@ -686,19 +1010,33 @@ export const QuestionBankView: React.FC = () => {
           <div className="bg-white border border-[#E2E8F0] rounded-xl w-full max-w-3xl max-h-[92vh] overflow-y-auto p-6 space-y-4">
             <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
               <h3 className="font-display font-bold text-base text-[#0F172A]">
-                {editingQ ? 'Edit Mathematics Question' : 'Add Mathematics Question'}
+                {editingQ ? 'Edit PCMB Question' : 'Add PCMB Question'}
               </h3>
               <button type="button" onClick={() => setQModal(false)} className="text-slate-400">
                 <X className="w-5 h-5" />
               </button>
             </div>
             <form onSubmit={handleSaveQuestion} className="space-y-4">
+              {qFormError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 space-y-2">
+                  <p>{qFormError}</p>
+                  {needsCloudAuth && (
+                    <button
+                      type="button"
+                      disabled={linkingCloud}
+                      onClick={handleInlineLinkCloud}
+                      className="px-2.5 py-1 bg-[#0032A0] text-white rounded font-semibold hover:bg-[#00257a] disabled:opacity-60"
+                    >
+                      {linkingCloud ? 'Linking...' : 'Link Cloud Account Now'}
+                    </button>
+                  )}
+                </div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="sm:col-span-2">
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Question Title</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Question Title (optional if image uploaded)</label>
                   <input
                     type="text"
-                    required
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                     placeholder="e.g. Definite Integral Symmetry Problem"
@@ -725,7 +1063,7 @@ export const QuestionBankView: React.FC = () => {
               <div>
                 <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
                   <label className="text-xs font-semibold text-slate-700">
-                    Question Text (supports KaTeX $...$ and $$...$$)
+                    Question Text (supports KaTeX $...$ and $$...$$; optional if diagram uploaded)
                   </label>
                   <div className="flex flex-wrap items-center gap-1">
                     {MATH_SNIPPETS.map((s) => (
@@ -742,7 +1080,6 @@ export const QuestionBankView: React.FC = () => {
                 </div>
                 <textarea
                   rows={4}
-                  required
                   value={questionText}
                   onChange={(e) => setQuestionText(e.target.value)}
                   placeholder="Enter question prose and LaTeX equations like $\int_0^{\pi/2} \sin x\,dx$"
@@ -757,14 +1094,29 @@ export const QuestionBankView: React.FC = () => {
               </div>
 
               {/* Question Image Upload */}
-              <div className="flex flex-wrap items-center gap-3">
-                <label className="inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold border border-[#E2E8F0] rounded-lg cursor-pointer hover:bg-slate-50">
-                  <ImageIcon className="w-4 h-4 text-[#0032A0]" />
-                  {uploadingImg ? 'Uploading Image...' : 'Upload Question Diagram / Image'}
-                  <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
-                </label>
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-3">
+                  <label className="inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold border border-[#E2E8F0] rounded-lg cursor-pointer hover:bg-slate-50">
+                    <ImageIcon className="w-4 h-4 text-[#0032A0]" />
+                    {uploadingImg ? 'Uploading Image...' : 'Upload Question Diagram / Image'}
+                    <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+                  </label>
+                  {questionImageUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setQuestionImageUrl('')}
+                      className="text-xs font-semibold text-red-600 hover:underline"
+                    >
+                      Remove Image
+                    </button>
+                  )}
+                </div>
                 {questionImageUrl && (
-                  <span className="text-xs font-mono text-emerald-700 truncate max-w-xs">{questionImageUrl}</span>
+                  <img
+                    src={questionImageUrl}
+                    alt="Question diagram preview"
+                    className="max-h-40 rounded-lg border border-[#E2E8F0] object-contain bg-white"
+                  />
                 )}
               </div>
 
@@ -838,7 +1190,21 @@ export const QuestionBankView: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Subject (PCMB)</label>
+                  <select
+                    value={subject}
+                    onChange={(e) => setSubject(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-[#E2E8F0] rounded-lg bg-white"
+                  >
+                    <option value="Physics">Physics</option>
+                    <option value="Chemistry">Chemistry</option>
+                    <option value="Mathematics">Mathematics</option>
+                    <option value="Biology">Biology</option>
+                    <option value="Combined PCMB">Combined PCMB</option>
+                  </select>
+                </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Class</label>
                   <select
@@ -854,12 +1220,14 @@ export const QuestionBankView: React.FC = () => {
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Category</label>
                   <select
                     value={examCategory}
-                    onChange={(e) => setExamCategory(e.target.value as 'JEE Main' | 'JEE Advanced' | 'MHT-CET')}
+                    onChange={(e) => setExamCategory(e.target.value as Question['examCategory'])}
                     className="w-full px-3 py-2 text-sm border border-[#E2E8F0] rounded-lg bg-white"
                   >
                     <option value="JEE Main">JEE Main</option>
                     <option value="JEE Advanced">JEE Advanced</option>
                     <option value="MHT-CET">MHT-CET</option>
+                    <option value="NEET">NEET</option>
+                    <option value="Foundation">Foundation</option>
                   </select>
                 </div>
                 <div>
@@ -868,7 +1236,7 @@ export const QuestionBankView: React.FC = () => {
                     type="text"
                     value={chapter}
                     onChange={(e) => setChapter(e.target.value)}
-                    placeholder="Integration"
+                    placeholder="e.g. Electrostatics, Integration"
                     className="w-full px-3 py-2 text-sm border border-[#E2E8F0] rounded-lg"
                   />
                 </div>
@@ -904,8 +1272,8 @@ export const QuestionBankView: React.FC = () => {
                 <button type="button" onClick={() => setQModal(false)} className="px-4 py-2 text-xs font-semibold border border-[#E2E8F0] rounded-lg">
                   Cancel
                 </button>
-                <button type="submit" className="px-4 py-2 text-xs font-semibold bg-[#0032A0] text-white rounded-lg">
-                  Save Question
+                <button type="submit" disabled={savingQ || uploadingImg} className="px-4 py-2 text-xs font-semibold bg-[#0032A0] text-white rounded-lg disabled:opacity-60">
+                  {savingQ ? 'Saving...' : 'Save Question'}
                 </button>
               </div>
             </form>
@@ -920,10 +1288,10 @@ export const QuestionBankView: React.FC = () => {
             <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
               <div>
                 <h3 className="font-display font-bold text-base text-[#0F172A]">
-                  Mathematical PDF / Image OCR Extraction
+                  PCMB PDF / Image OCR Extraction
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Preserves √, π, ∫, Σ, ∞, θ, α, β, matrices, fractions &amp; powers. Always review before saving.
+                  Extracts Physics, Chemistry, Mathematics &amp; Biology problems while preserving √, π, ∫, Σ, vectors, chemical notation &amp; powers.
                 </p>
               </div>
               <button type="button" onClick={() => setOcrModal(false)} className="text-slate-400">
@@ -952,12 +1320,12 @@ export const QuestionBankView: React.FC = () => {
                 </label>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">Or Paste Raw Math Text</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">Or Paste Raw PCMB Text</label>
                 <textarea
                   rows={4}
                   value={ocrRawText}
                   onChange={(e) => setOcrRawText(e.target.value)}
-                  placeholder="Paste raw text containing math problems and options..."
+                  placeholder="Paste raw text containing Physics, Chemistry, Maths or Biology problems and options..."
                   className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg font-mono"
                 />
               </div>
@@ -1117,6 +1485,253 @@ export const QuestionBankView: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Upload Images (Fast) Modal */}
+      {bulkImgModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="bg-white border border-[#E2E8F0] rounded-xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden shadow-xl">
+            <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-[#E2E8F0] shrink-0">
+              <div className="flex items-center gap-2.5">
+                <h3 className="font-display font-bold text-base text-[#0F172A]">Bulk Upload Images</h3>
+                <span className="px-2 py-0.5 text-xs font-mono font-bold bg-[#059669] text-white rounded">
+                  Fast · {bulkImages.length}
+                </span>
+              </div>
+              <button type="button" onClick={closeBulkImageModal} className="text-slate-400 hover:text-slate-700 p-1">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-5 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-[#0032A0] mb-1">Question Folder</label>
+                  <select
+                    value={bulkImgFolderId}
+                    onChange={(e) => setBulkImgFolderId(e.target.value)}
+                    className="w-full px-2.5 py-2 text-xs border border-[#E2E8F0] rounded-lg bg-white"
+                  >
+                    <option value="">General</option>
+                    {folders.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#0032A0] mb-1">Subject (PCMB)</label>
+                  <select
+                    value={bulkImgSubject}
+                    onChange={(e) => setBulkImgSubject(e.target.value)}
+                    className="w-full px-2.5 py-2 text-xs border border-[#E2E8F0] rounded-lg bg-white"
+                  >
+                    <option value="Physics">Physics</option>
+                    <option value="Chemistry">Chemistry</option>
+                    <option value="Mathematics">Mathematics</option>
+                    <option value="Biology">Biology</option>
+                    <option value="Combined PCMB">Combined PCMB</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#0032A0] mb-1">Target Class</label>
+                  <select
+                    value={bulkImgClass}
+                    onChange={(e) => setBulkImgClass(e.target.value as 'Class 11th' | 'Class 12th')}
+                    className="w-full px-2.5 py-2 text-xs border border-[#E2E8F0] rounded-lg bg-white"
+                  >
+                    <option value="Class 11th">Class 11th</option>
+                    <option value="Class 12th">Class 12th</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#0032A0] mb-1">Exam Category</label>
+                  <select
+                    value={bulkImgCat}
+                    onChange={(e) => setBulkImgCat(e.target.value as Question['examCategory'])}
+                    className="w-full px-2.5 py-2 text-xs border border-[#E2E8F0] rounded-lg bg-white"
+                  >
+                    <option value="JEE Main">JEE Main</option>
+                    <option value="JEE Advanced">JEE Advanced</option>
+                    <option value="MHT-CET">MHT-CET</option>
+                    <option value="NEET">NEET</option>
+                    <option value="Foundation">Foundation</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Green Dashed Multi-Image Dropzone */}
+              <div
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setBulkImgDragOver(true);
+                }}
+                onDragLeave={() => setBulkImgDragOver(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setBulkImgDragOver(false);
+                  if (e.dataTransfer.files?.length) {
+                    handleAddBankBulkImages(e.dataTransfer.files);
+                  }
+                }}
+                onClick={() => bulkImgInputRef.current?.click()}
+                className={`border-2 border-dashed rounded-xl px-4 py-6 text-center cursor-pointer transition-colors ${
+                  bulkImgDragOver
+                    ? 'border-emerald-600 bg-emerald-50'
+                    : 'border-emerald-400 hover:border-emerald-500 bg-emerald-50/15 hover:bg-emerald-50/35'
+                }`}
+              >
+                <input
+                  ref={bulkImgInputRef}
+                  type="file"
+                  multiple
+                  accept="image/png,image/jpeg,image/webp,image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    if (e.target.files?.length) {
+                      handleAddBankBulkImages(e.target.files);
+                    }
+                    e.currentTarget.value = '';
+                  }}
+                />
+                <Upload className="w-6 h-6 text-[#059669] mx-auto mb-2" />
+                <p className="text-xs font-bold text-[#0F172A]">
+                  Drop or Click to Select 10–100 Question Images at Once
+                </p>
+                <p className="text-[11px] font-medium text-[#059669] mt-1">
+                  Auto-sorted in numeric order (1.png, 2.png, ... 50.png) · Instant batch attach + Cloud Sync
+                </p>
+              </div>
+
+              {bulkImgSuccess && (
+                <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs font-medium text-emerald-800">
+                  {bulkImgSuccess}
+                </div>
+              )}
+
+              {bulkImages.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
+                    <div className="relative flex-1 min-w-[200px]">
+                      <KeyRound className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={bulkKeyPaste}
+                        onChange={(e) => setBulkKeyPaste(e.target.value)}
+                        placeholder="Quick Answer Key Paste: A,B,C,D,A... or 1.A 2.B 3.C"
+                        className="w-full pl-8 pr-3 py-2 text-xs font-mono border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#0032A0]"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleApplyBankBulkKeys}
+                      className="px-4 py-2 text-xs font-semibold bg-[#0032A0] hover:bg-[#00257a] text-white rounded-lg shrink-0"
+                    >
+                      Apply Keys
+                    </button>
+                  </div>
+
+                  <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+                    {bulkImages.map((item, idx) => (
+                      <div key={item.id} className="flex items-center gap-3 p-2.5 bg-white border border-[#E2E8F0] rounded-lg">
+                        <span className="text-xs font-mono font-bold text-[#0032A0] w-8 shrink-0">Q{idx + 1}</span>
+                        <img
+                          src={item.previewUrl}
+                          alt={item.fileName}
+                          className="w-11 h-9 object-contain bg-slate-50 border border-[#E2E8F0] rounded shrink-0"
+                        />
+                        <span className="text-xs font-mono text-slate-700 truncate flex-1 min-w-0">
+                          {item.fileName}
+                        </span>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {(['A', 'B', 'C', 'D'] as const).map((letter) => {
+                            const active = item.answerKey === letter;
+                            return (
+                              <button
+                                key={letter}
+                                type="button"
+                                onClick={() =>
+                                  setBulkImages((prev) =>
+                                    prev.map((x) => (x.id === item.id ? { ...x, answerKey: letter } : x))
+                                  )
+                                }
+                                className={`w-7 h-7 text-xs font-mono font-bold rounded border transition-colors ${
+                                  active
+                                    ? 'bg-[#059669] text-white border-[#059669]'
+                                    : 'bg-white text-slate-600 border-[#E2E8F0] hover:bg-slate-50'
+                                }`}
+                              >
+                                {letter}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setBulkImages((prev) => {
+                              const found = prev.find((x) => x.id === item.id);
+                              if (found && found.previewUrl.startsWith('blob:')) {
+                                URL.revokeObjectURL(found.previewUrl);
+                              }
+                              return prev.filter((x) => x.id !== item.id);
+                            })
+                          }
+                          className="p-1.5 text-red-500 hover:bg-red-50 rounded shrink-0"
+                          aria-label={`Remove ${item.fileName}`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {bulkImgStatus && (
+                <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-lg text-xs font-mono text-[#0032A0]">
+                  {bulkImgStatus}
+                </div>
+              )}
+
+              {bulkImgError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 space-y-2">
+                  <p>{bulkImgError}</p>
+                  {needsCloudAuth && (
+                    <button
+                      type="button"
+                      disabled={linkingCloud}
+                      onClick={handleInlineLinkCloud}
+                      className="px-2.5 py-1 bg-[#0032A0] text-white rounded font-semibold hover:bg-[#00257a] disabled:opacity-60"
+                    >
+                      {linkingCloud ? 'Linking...' : 'Link Cloud Account Now'}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 px-4 sm:px-6 py-3.5 border-t border-[#E2E8F0] bg-slate-50/70 shrink-0">
+              <button
+                type="button"
+                onClick={closeBulkImageModal}
+                className="px-4 py-2 text-xs font-semibold border border-[#E2E8F0] bg-white rounded-lg text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={bulkImgSaving || bulkImages.length === 0}
+                onClick={() => void handleCommitBankBulkImages()}
+                className="inline-flex items-center gap-1.5 px-5 py-2 text-xs font-semibold bg-[#0032A0] hover:bg-[#00257a] text-white rounded-lg disabled:opacity-50"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                {bulkImgSaving ? 'Syncing...' : `Attach All ${bulkImages.length} Images & Sync`}
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -337,8 +337,8 @@ export const OwnerClientsView: React.FC<OwnerClientsViewProps> = ({
     const startVal = (lic?.activationDate || todayStr()).slice(0, 10);
     const isTrialNow = org.billingCycle === 'TRIAL';
     setValidityOrg(org);
-    setValidityMode(isTrialNow ? 'TRIAL' : 'TRIAL');
-    setValidityCycle(isTrialNow ? 'TRIAL' : 'TRIAL');
+    setValidityMode(isTrialNow ? 'TRIAL' : 'CUSTOM_DATE');
+    setValidityCycle(isTrialNow ? 'TRIAL' : org.billingCycle);
     setValidityStart(todayStr());
     setValidityEnd(
       lic && new Date(lic.expirationDate).getTime() > Date.now() && isTrialNow
@@ -680,6 +680,7 @@ export const OwnerClientsView: React.FC<OwnerClientsViewProps> = ({
                   <p className="font-semibold text-sm text-[#0F172A] truncate">{org.instituteName}</p>
                   <p className="text-[11px] font-mono text-[#0032A0]">
                     {org.id} {alloc ? `· ${alloc.code}` : ''}
+                    {org.billingCycle === 'TRIAL' ? ' · TRIAL PLAN' : ''}
                   </p>
                   <p className="text-xs text-slate-500 truncate">
                     {org.email} · {org.planCode}
@@ -873,6 +874,7 @@ export const OwnerClientsView: React.FC<OwnerClientsViewProps> = ({
                       <p className="font-semibold text-[#0F172A]">{org.instituteName}</p>
                       <p className="text-xs font-mono text-[#0032A0]">
                         {org.id} {alloc ? `· ${alloc.code}` : ''}
+                        {org.billingCycle === 'TRIAL' ? ' · TRIAL PLAN' : ''}
                       </p>
                       <p className="text-xs text-slate-500">
                         {org.email} · {org.planCode}

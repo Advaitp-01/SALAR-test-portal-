@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Check, CreditCard, Save } from 'lucide-react';
 import { salarApi } from '../../lib/salarApi';
 import { formatCurrencyINR } from '../../lib/portalService';
@@ -16,6 +16,12 @@ export const OwnerPlansView: React.FC<OwnerPlansViewProps> = ({ data, onRefresh 
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
+
+  useEffect(() => {
+    if (data.organizations.length > 0 && !data.organizations.some((o) => o.id === customOrgId)) {
+      setCustomOrgId(data.organizations[0].id);
+    }
+  }, [data.organizations, customOrgId]);
 
   const handleSavePlan = async (e: React.FormEvent) => {
     e.preventDefault();

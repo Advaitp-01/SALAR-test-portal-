@@ -1,15 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import { addDoc, collection, onSnapshot, query, where } from '../../lib/tenantDb';
-import { BookOpen, CheckCircle2, Clock, CreditCard, ExternalLink, FileText, Lock, X } from 'lucide-react';
+import { BookOpen, CheckCircle2, Clock, CreditCard, ExternalLink, FileText, Lock, PlayCircle, X } from 'lucide-react';
 import { db } from '../../lib/firebase';
 import { handleFirestoreError, OperationType } from '../../lib/firestoreError';
 import { formatCurrencyINR, GENERATED_ASSETS } from '../../lib/portalService';
 import { useAuth } from '../../context/AuthContext';
-import type { Course, Enrollment, PaymentRecord } from '../../types/portal';
+import type { Course, Enrollment, Exam, PaymentRecord } from '../../types/portal';
 
-export const StudentCoursesView: React.FC = () => {
+interface StudentCoursesViewProps {
+  onLaunchExam?: (exam: Exam) => void;
+}
+
+export const StudentCoursesView: React.FC<StudentCoursesViewProps> = ({ onLaunchExam }) => {
   const { firebaseUser, studentProfile, settings, isIsolatedTenant } = useAuth();
   const [courses, setCourses] = useState<Course[]>([]);
+  const [liveExams, setLiveExams] = useState<Exam[]>([]);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,7 +34,17 @@ export const StudentCoursesView: React.FC = () => {
       },
       () => setLoading(false)
     );
-    if (!firebaseUser) return () => u1();
+    const uExams = onSnapshot(
+      query(collection(db, 'exams'), where('status', '==', 'LIVE')),
+      (snap) => setLiveExams(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Exam, 'id'>) }))),
+      () => {}
+    );
+    if (!firebaseUser) {
+      return () => {
+        u1();
+        uExams();
+      };
+    }
 
     const u2 = onSnapshot(
       query(collection(db, 'enrollments'), where('studentUid', '==', firebaseUser.uid)),
@@ -49,6 +64,7 @@ export const StudentCoursesView: React.FC = () => {
 
     return () => {
       u1();
+      uExams();
       u2();
       u3();
     };
@@ -94,12 +110,12 @@ export const StudentCoursesView: React.FC = () => {
     <div className="space-y-6">
       <div className="bg-white border border-[#E2E8F0] rounded-xl p-5">
         <h1 className="font-display text-2xl font-bold text-[#0F172A]">
-          {isIsolatedTenant ? 'Courses & Study Modules' : 'Mathematics Courses'}
+          {isIsolatedTenant ? 'Courses & Study Modules' : 'PCMB Courses'}
         </h1>
         <p className="text-xs text-slate-500 mt-0.5">
           {isIsolatedTenant
             ? `Structured learning modules and chapter PDFs published by ${settings.instituteName}`
-            : 'Structured JEE Main, JEE Advanced & MHT-CET Mathematics modules with chapter PDFs'}
+            : 'Structured Physics, Chemistry, Mathematics & Biology (PCMB) modules with chapter PDFs'}
         </p>
       </div>
 
@@ -273,6 +289,47 @@ export const StudentCoursesView: React.FC = () => {
               </button>
             </div>
             <div className="flex-1 overflow-y-auto p-5 space-y-4">
+              {(() => {
+                const courseExamIds = new Set(viewCourse.examIds || []);
+                const courseLinkedExams = liveExams.filter((ex) => courseExamIds.has(ex.id));
+                if (courseLinkedExams.length === 0) return null;
+                return (
+                  <div className="border border-blue-200 bg-blue-50/40 rounded-xl p-4 space-y-2.5">
+                    <h4 className="font-display font-bold text-sm text-[#0032A0]">
+                      Assigned CBT Practice Tests ({courseLinkedExams.length})
+                    </h4>
+                    <div className="space-y-2">
+                      {courseLinkedExams.map((ex) => (
+                        <div
+                          key={ex.id}
+                          className="bg-white border border-[#E2E8F0] rounded-lg p-3 flex items-center justify-between gap-3"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-[11px] font-mono text-[#0032A0] font-semibold">{ex.code}</p>
+                            <p className="text-xs font-bold text-[#0F172A] truncate">{ex.title}</p>
+                            <p className="text-[11px] font-mono text-slate-500">
+                              {ex.durationMinutes} min · {ex.questionCount || 0} Qs · {ex.totalMarks} Marks
+                            </p>
+                          </div>
+                          {onLaunchExam && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setViewCourse(null);
+                                onLaunchExam(ex);
+                              }}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-[#0032A0] text-white rounded-lg shrink-0"
+                            >
+                              <PlayCircle className="w-3.5 h-3.5" />
+                              Start CBT
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
               {(viewCourse.modules || []).length === 0 ? (
                 <p className="text-xs text-slate-500 text-center py-8">
                   Faculty is uploading modules for this course. Check back shortly.

@@ -14,7 +14,6 @@ googleAuthProvider.setCustomParameters({ prompt: 'select_account' });
 export const PRIMARY_ADMIN_EMAIL = 'gurukulclassestech@gmail.com';
 export const AUTHORIZED_ADMIN_EMAILS = [
   'gurukulclassestech@gmail.com',
-  'advaitp38@gmail.com',
 ];
 
 export function isAuthorizedAdminEmail(email?: string | null): boolean {

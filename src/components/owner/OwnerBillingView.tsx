@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Building,
   Check,
@@ -78,6 +78,16 @@ export const OwnerBillingView: React.FC<OwnerBillingViewProps> = ({ mode, data, 
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
+
+  useEffect(() => {
+    setMgConfig(data.systemSettings.manualGateway);
+  }, [data.systemSettings.manualGateway]);
+
+  useEffect(() => {
+    if (data.organizations.length > 0 && !data.organizations.some((o) => o.id === invOrgId)) {
+      setInvOrgId(data.organizations[0].id);
+    }
+  }, [data.organizations, invOrgId]);
 
   const openInvoices = useMemo(
     () => data.subscriptionInvoices.filter((i) => i.status === 'PENDING' || i.status === 'OVERDUE'),

@@ -13,7 +13,7 @@ export const StudentProfileView: React.FC = () => {
   const [whatsapp, setWhatsapp] = useState('');
   const [classLevel, setClassLevel] = useState<'Class 11th' | 'Class 12th' | 'Dropper / Repeater'>('Class 12th');
   const [targetExam, setTargetExam] = useState<
-    'JEE Main' | 'JEE Advanced' | 'MHT-CET' | 'Boards + CET' | 'JEE Main + Advanced'
+    'JEE Main' | 'JEE Advanced' | 'MHT-CET' | 'NEET' | 'Boards + CET' | 'JEE Main + Advanced' | 'PCMB Foundation'
   >('JEE Main');
   const [photoUrl, setPhotoUrl] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -74,7 +74,7 @@ export const StudentProfileView: React.FC = () => {
         <p className="text-xs text-slate-500 mt-0.5">
           {isIsolatedTenant
             ? 'Manage your personal contact information, profile photo, and target examination'
-            : 'Manage your personal contact information, profile photo, and target Mathematics examination'}
+            : 'Manage your personal contact information, profile photo, and target PCMB examination'}
         </p>
       </div>
 
@@ -184,11 +184,13 @@ export const StudentProfileView: React.FC = () => {
               onChange={(e) => setTargetExam(e.target.value as typeof targetExam)}
               className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg bg-white"
             >
-              <option value="JEE Main">{isIsolatedTenant ? 'JEE Main' : 'JEE Main Mathematics'}</option>
-              <option value="JEE Advanced">{isIsolatedTenant ? 'JEE Advanced' : 'JEE Advanced Mathematics'}</option>
-              <option value="MHT-CET">{isIsolatedTenant ? 'MHT-CET' : 'MHT-CET Mathematics'}</option>
+              <option value="JEE Main">JEE Main (PCM)</option>
+              <option value="JEE Advanced">JEE Advanced (PCM)</option>
+              <option value="MHT-CET">MHT-CET (PCM / PCB)</option>
+              <option value="NEET">NEET-UG (PCB)</option>
               <option value="JEE Main + Advanced">JEE Main + Advanced</option>
               <option value="Boards + CET">{isIsolatedTenant ? 'Boards + Entrance' : 'Boards + CET'}</option>
+              <option value="PCMB Foundation">PCMB Foundation</option>
             </select>
           </div>
         </div>

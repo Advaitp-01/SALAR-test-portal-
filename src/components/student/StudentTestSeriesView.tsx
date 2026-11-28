@@ -111,12 +111,12 @@ export const StudentTestSeriesView: React.FC<StudentTestSeriesViewProps> = ({ on
     <div className="space-y-6">
       <div className="bg-white border border-[#E2E8F0] rounded-xl p-5">
         <h1 className="font-display text-2xl font-bold text-[#0F172A]">
-          {isIsolatedTenant ? 'Online Test Series' : 'Mathematics Test Series'}
+          {isIsolatedTenant ? 'Online Test Series' : 'PCMB Test Series'}
         </h1>
         <p className="text-xs text-slate-500 mt-0.5">
           {isIsolatedTenant
             ? `Full-length Computer-Based Test packages published by ${settings.instituteName}`
-            : 'Full-length JEE Main, JEE Advanced & MHT-CET Computer-Based Test packages'}
+            : 'Full-length Physics, Chemistry, Mathematics & Biology (JEE, MHT-CET & NEET) CBT packages'}
         </p>
       </div>
 

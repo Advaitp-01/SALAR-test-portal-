@@ -42,7 +42,7 @@ export const StudentsView: React.FC = () => {
   const [whatsapp, setWhatsapp] = useState('');
   const [classLevel, setClassLevel] = useState<'Class 11th' | 'Class 12th' | 'Dropper / Repeater'>('Class 12th');
   const [targetExam, setTargetExam] = useState<
-    'JEE Main' | 'JEE Advanced' | 'MHT-CET' | 'Boards + CET' | 'JEE Main + Advanced'
+    'JEE Main' | 'JEE Advanced' | 'MHT-CET' | 'NEET' | 'Boards + CET' | 'JEE Main + Advanced' | 'PCMB Foundation'
   >('JEE Main');
   const [rollNumber, setRollNumber] = useState('');
   const [username, setUsername] = useState('');
@@ -484,8 +484,10 @@ export const StudentsView: React.FC = () => {
                     <option value="JEE Main">JEE Main</option>
                     <option value="JEE Advanced">JEE Advanced</option>
                     <option value="MHT-CET">MHT-CET</option>
+                    <option value="NEET">NEET</option>
                     <option value="JEE Main + Advanced">JEE Main + Advanced</option>
                     <option value="Boards + CET">Boards + CET</option>
+                    <option value="PCMB Foundation">PCMB Foundation</option>
                   </select>
                 </div>
                 <div>

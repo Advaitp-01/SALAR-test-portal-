@@ -99,15 +99,15 @@ function createInitialTenantSettings(org: Organization): Record<string, unknown>
   const slugHandle = (org.portalSlug || getOrgShortCode(org).toLowerCase()).replace(/[^a-z0-9]/gi, '').slice(0, 24) || 'institute';
   return {
     instituteName: org.instituteName,
-    tagline: 'Online Computer-Based Testing & Academic Portal',
+    tagline: 'IIT-JEE · NEET · MHT-CET · PCMB Foundation Portal',
     storageTag: org.tenantId,
     logoUrl: org.logoUrl || '',
     logoWidth: 40,
     logoHeight: 40,
     heroImage: '/src/assets/images/hero_clean_math_1795625096103.jpg',
-    heroTitle: `${org.instituteName} — Online Examination & Learning Portal`,
+    heroTitle: `${org.instituteName} — PCMB Examination & Learning Portal`,
     heroSubtitle:
-      'Computer-Based Test (CBT) engine, chapterwise question banks, structured courses, and instant rank analytics.',
+      'Computer-Based Test (CBT) engine for Physics, Chemistry, Mathematics, and Biology with chapterwise question banks, structured courses, and instant rank analytics.',
     primaryCta: 'Student Portal Login',
     secondaryCta: 'Quick Join Candidate',
     faviconUrl: '',
@@ -137,6 +137,56 @@ function createInitialTenantSettings(org: Organization): Record<string, unknown>
       enableEmailNotifications: true,
       enableWhatsAppNotifications: true,
       compactTables: false,
+      frontend: {
+        establishedLine: `${org.city || 'India'} · Powered by SALAR Tech`,
+        subjectsHeading: 'Subjects Taught (PCMB)',
+        subjectsSubheading: 'Complete Coaching for Physics, Chemistry, Mathematics & Biology',
+        subjectsTaught: [
+          {
+            id: 'physics',
+            name: 'Physics',
+            code: 'PHY',
+            examFocus: 'IIT-JEE · NEET · MHT-CET',
+            description: 'Mechanics, Electrodynamics, Optics, Thermodynamics & Modern Physics with numerical drills.',
+            highlight: 'Concept + Numericals',
+          },
+          {
+            id: 'chemistry',
+            name: 'Chemistry',
+            code: 'CHE',
+            examFocus: 'IIT-JEE · NEET · MHT-CET',
+            description: 'Physical, Organic & Inorganic Chemistry backed by NCERT mastery and reaction mechanisms.',
+            highlight: 'NCERT + Mechanisms',
+          },
+          {
+            id: 'mathematics',
+            name: 'Mathematics',
+            code: 'MAT',
+            examFocus: 'IIT-JEE · MHT-CET · Boards',
+            description: 'Calculus, Algebra, Coordinate Geometry, Vectors & 3D problem-solving speed.',
+            highlight: 'JEE + CET Speed',
+          },
+          {
+            id: 'biology',
+            name: 'Biology',
+            code: 'BIO',
+            examFocus: 'NEET (UG) · MHT-CET · Boards',
+            description: 'Botany & Zoology line-by-line NCERT mastery, diagrams, assertion-reason & mock drills.',
+            highlight: 'NEET Line-by-Line',
+          },
+        ],
+        sectionVisibility: {
+          announcement: false,
+          heroHighlights: false,
+          subjects: true,
+          courses: true,
+          testSeries: true,
+          gpat: false,
+          about: false,
+          results: false,
+          contact: true,
+        },
+      },
     },
     updatedAt: now,
   };
@@ -163,7 +213,7 @@ function seedStarterExamWorkspace(org: Organization, store: TenantRuntimeDatabas
 
   store.collections.batches = {
     [batch1Id]: {
-      name: `${short} Target JEE 2026 (Class 12th)`,
+      name: `${short} Target JEE / NEET / CET 2026 (Class 12th PCMB)`,
       classLevel: 'Class 12th',
       academicYear: '2025-26',
       schedule: 'Mon–Sat · 07:30 AM – 09:30 AM',
@@ -176,7 +226,7 @@ function seedStarterExamWorkspace(org: Organization, store: TenantRuntimeDatabas
       updatedAt: now,
     },
     [batch2Id]: {
-      name: `${short} Foundation Batch (Class 11th)`,
+      name: `${short} PCMB Foundation Batch (Class 11th)`,
       classLevel: 'Class 11th',
       academicYear: '2025-26',
       schedule: 'Mon–Sat · 04:00 PM – 06:00 PM',
@@ -193,13 +243,13 @@ function seedStarterExamWorkspace(org: Organization, store: TenantRuntimeDatabas
   store.collections.faculty = {
     [faculty1Id]: {
       name: leadName,
-      qualification: 'Senior Faculty & Academic Lead',
-      subjectSpecialization: 'Mathematics, Calculus & Competitive Exam Prep',
+      qualification: 'Senior PCMB Faculty & Academic Lead',
+      subjectSpecialization: 'Physics, Chemistry, Mathematics & Biology (PCMB)',
       experience: '10+ Years',
       email: org.email || `faculty@${org.portalSlug || 'institute'}.in`,
       contactNumber: org.mobile || '',
       photoUrl: '',
-      assignedBatches: [`${short} Target JEE 2026 (Class 12th)`],
+      assignedBatches: [`${short} Target JEE / NEET / CET 2026 (Class 12th PCMB)`],
       status: 'ACTIVE',
       createdAt: now,
       updatedAt: now,
@@ -208,9 +258,9 @@ function seedStarterExamWorkspace(org: Organization, store: TenantRuntimeDatabas
 
   store.collections.questionFolders = {
     [folder1Id]: {
-      name: `${short} Starter Question Bank (Calculus & Algebra)`,
+      name: `${short} PCMB Starter Bank (Physics, Chemistry, Maths & Biology)`,
       classLevel: 'Class 12th',
-      chapter: 'Differential & Integral Calculus',
+      chapter: 'PCMB Core Concepts',
       examCategory: 'JEE Main',
       createdAt: now,
     },
@@ -218,6 +268,7 @@ function seedStarterExamWorkspace(org: Organization, store: TenantRuntimeDatabas
 
   const starterQuestions: Array<{
     id: string;
+    subject: 'Physics' | 'Chemistry' | 'Mathematics' | 'Biology';
     title: string;
     questionText: string;
     questionType: 'SINGLE_MCQ' | 'MULTI_MCQ' | 'NUMERICAL' | 'INTEGER';
@@ -230,10 +281,50 @@ function seedStarterExamWorkspace(org: Organization, store: TenantRuntimeDatabas
     classLevel: 'Class 11th' | 'Class 12th';
     chapter: string;
     topic: string;
-    examCategory: 'JEE Main' | 'JEE Advanced' | 'MHT-CET';
+    examCategory: 'JEE Main' | 'JEE Advanced' | 'MHT-CET' | 'NEET';
   }> = [
     {
       id: `q_${short.toLowerCase()}_01`,
+      subject: 'Physics',
+      title: 'Electrostatics — Gauss Law Electric Flux',
+      questionText: 'A charge $q$ is placed at the centre of a cube of side $a$. What is the total electric flux passing through one face of the cube?',
+      questionType: 'SINGLE_MCQ',
+      options: [
+        { id: 'A', text: '$\\frac{q}{6\\varepsilon_0}$' },
+        { id: 'B', text: '$\\frac{q}{\\varepsilon_0}$' },
+        { id: 'C', text: '$\\frac{q}{4\\varepsilon_0}$' },
+        { id: 'D', text: '$\\frac{q}{8\\varepsilon_0}$' },
+      ],
+      correctAnswer: 'A',
+      explanation: 'By Gauss’s Law total flux through all 6 symmetric faces is $q/\\varepsilon_0$, so flux through one face is $q/(6\\varepsilon_0)$.',
+      positiveMarks: 4,
+      negativeMarks: 1,
+      difficulty: 'EASY',
+      classLevel: 'Class 12th',
+      chapter: 'Electrostatics',
+      topic: 'Gauss Law',
+      examCategory: 'JEE Main',
+    },
+    {
+      id: `q_${short.toLowerCase()}_02`,
+      subject: 'Chemistry',
+      title: 'Chemical Kinetics — First Order Half-Life',
+      questionText: 'For a first-order reaction, if the rate constant is $k = 0.693\\text{ min}^{-1}$, find its half-life $t_{1/2}$ in minutes.',
+      questionType: 'NUMERICAL',
+      options: [],
+      correctAnswer: '1',
+      explanation: '$t_{1/2} = \\frac{0.693}{k} = \\frac{0.693}{0.693} = 1\\text{ min}$.',
+      positiveMarks: 4,
+      negativeMarks: 0,
+      difficulty: 'EASY',
+      classLevel: 'Class 12th',
+      chapter: 'Chemical Kinetics',
+      topic: 'First Order Reactions',
+      examCategory: 'JEE Main',
+    },
+    {
+      id: `q_${short.toLowerCase()}_03`,
+      subject: 'Mathematics',
       title: 'Definite Integral Symmetry Property',
       questionText: 'Evaluate the definite integral: $$\\int_{0}^{\\pi/2} \\frac{\\sin x}{\\sin x + \\cos x}\\,dx$$',
       questionType: 'SINGLE_MCQ',
@@ -244,7 +335,7 @@ function seedStarterExamWorkspace(org: Organization, store: TenantRuntimeDatabas
         { id: 'D', text: '$0$' },
       ],
       correctAnswer: 'A',
-      explanation: 'Using King’s property $I = \\int_0^a f(a-x)\\,dx$, adding $I + I = \\int_0^{\\pi/2} 1\\,dx = \\frac{\\pi}{2}$, hence $I = \\frac{\\pi}{4}$.',
+      explanation: 'Using King’s property $I = \\int_0^a f(a-x)\\,dx$, $2I = \\frac{\\pi}{2}$, hence $I = \\frac{\\pi}{4}$.',
       positiveMarks: 4,
       negativeMarks: 1,
       difficulty: 'EASY',
@@ -254,57 +345,26 @@ function seedStarterExamWorkspace(org: Organization, store: TenantRuntimeDatabas
       examCategory: 'JEE Main',
     },
     {
-      id: `q_${short.toLowerCase()}_02`,
-      title: 'Matrices & Determinant Invertibility',
-      questionText: 'Let $A$ be a $3 \\times 3$ non-singular square matrix such that $\\det(A) = 5$. Which of the following statements are correct?',
-      questionType: 'MULTI_MCQ',
+      id: `q_${short.toLowerCase()}_04`,
+      subject: 'Biology',
+      title: 'Cell Cycle — DNA Replication Phase',
+      questionText: 'During which phase of the eukaryotic cell cycle does DNA replication take place while the chromosome number remains unchanged?',
+      questionType: 'SINGLE_MCQ',
       options: [
-        { id: 'A', text: '$\\det(\\operatorname{adj} A) = 25$' },
-        { id: 'B', text: '$\\det(2A) = 40$' },
-        { id: 'C', text: '$\\det(A^{-1}) = 5$' },
-        { id: 'D', text: '$\\det(A^T) = 5$' },
+        { id: 'A', text: 'G1 Phase' },
+        { id: 'B', text: 'S Phase' },
+        { id: 'C', text: 'G2 Phase' },
+        { id: 'D', text: 'M Phase' },
       ],
-      correctAnswer: 'A,B,D',
-      explanation: '$\\det(\\operatorname{adj} A) = |A|^{n-1} = 5^2 = 25$, $\\det(2A) = 2^3 |A| = 40$, and $\\det(A^T) = |A| = 5$.',
+      correctAnswer: 'B',
+      explanation: 'In the S (Synthesis) phase of interphase, DNA content doubles from 2C to 4C while ploidy (2n) remains constant.',
       positiveMarks: 4,
       negativeMarks: 1,
-      difficulty: 'MEDIUM',
-      classLevel: 'Class 12th',
-      chapter: 'Matrices & Determinants',
-      topic: 'Properties of Determinants',
-      examCategory: 'JEE Main',
-    },
-    {
-      id: `q_${short.toLowerCase()}_03`,
-      title: 'Standard Trigonometric Limit',
-      questionText: 'Find the numerical value of $\\lim_{x \\to 0} \\frac{1 - \\cos 4x}{x^2}$.',
-      questionType: 'NUMERICAL',
-      options: [],
-      correctAnswer: '8',
-      explanation: '$1 - \\cos 4x = 2\\sin^2(2x)$, so $\\lim_{x\\to 0} \\frac{2\\sin^2(2x)}{x^2} = 2 \\cdot 2^2 = 8$.',
-      positiveMarks: 4,
-      negativeMarks: 0,
       difficulty: 'EASY',
       classLevel: 'Class 11th',
-      chapter: 'Limits & Continuity',
-      topic: 'Trigonometric Limits',
-      examCategory: 'JEE Main',
-    },
-    {
-      id: `q_${short.toLowerCase()}_04`,
-      title: 'Quadratic Roots Sum of Squares',
-      questionText: 'If $\\alpha$ and $\\beta$ are roots of $x^2 - 5x + 6 = 0$, find the integer value of $\\alpha^2 + \\beta^2$.',
-      questionType: 'INTEGER',
-      options: [],
-      correctAnswer: '13',
-      explanation: '$\\alpha^2 + \\beta^2 = (\\alpha + \\beta)^2 - 2\\alpha\\beta = 25 - 12 = 13$.',
-      positiveMarks: 4,
-      negativeMarks: 0,
-      difficulty: 'EASY',
-      classLevel: 'Class 11th',
-      chapter: 'Quadratic Equations',
-      topic: 'Symmetric Functions of Roots',
-      examCategory: 'JEE Main',
+      chapter: 'Cell Cycle and Cell Division',
+      topic: 'Interphase (S Phase)',
+      examCategory: 'NEET',
     },
   ];
 
@@ -315,7 +375,8 @@ function seedStarterExamWorkspace(org: Organization, store: TenantRuntimeDatabas
   starterQuestions.forEach((q, idx) => {
     store.collections.questions[q.id] = {
       folderId: folder1Id,
-      folderName: `${short} Starter Question Bank (Calculus & Algebra)`,
+      folderName: `${short} PCMB Starter Bank (Physics, Chemistry, Maths & Biology)`,
+      subject: q.subject,
       title: q.title,
       questionText: q.questionText,
       questionImageUrl: '',
@@ -339,7 +400,7 @@ function seedStarterExamWorkspace(org: Organization, store: TenantRuntimeDatabas
       examStatus: 'LIVE',
       orderIndex: idx + 1,
       title: q.title,
-      subject: 'Mathematics',
+      subject: q.subject,
       questionText: q.questionText,
       questionImageUrl: '',
       questionType: q.questionType,
@@ -357,15 +418,15 @@ function seedStarterExamWorkspace(org: Organization, store: TenantRuntimeDatabas
 
   store.collections.exams = {
     [examLiveId]: {
-      title: `${org.instituteName} Live CBT Mock Test 01`,
-      code: `${short}-MOCK-01`,
+      title: `${org.instituteName} PCMB Live CBT Mock Test 01`,
+      code: `${short}-PCMB-01`,
       classLevel: 'All Classes',
       target: 'JEE Main',
-      subject: 'Mathematics',
+      subject: 'Combined PCMB',
       examTag: 'JEE Main (+4/-1)',
-      folderName: `${short} Starter Question Bank`,
+      folderName: `${short} PCMB Starter Bank`,
       examType: 'Full Mock Test',
-      durationMinutes: 30,
+      durationMinutes: 45,
       totalMarks: 16,
       passingMarks: 6,
       questionCount: starterQuestions.length,
@@ -377,18 +438,18 @@ function seedStarterExamWorkspace(org: Organization, store: TenantRuntimeDatabas
       assignedCount: 0,
       assignedBatchIds: [batch1Id, batch2Id],
       instructions:
-        'Read each question carefully. Single/Multi MCQ carry +4/-1 marks; Numerical & Integer carry +4/0 marks.',
+        'Combined Physics, Chemistry, Mathematics & Biology mock paper. Read each question carefully before answering.',
       createdAt: now,
       updatedAt: now,
     },
     [examDraftId]: {
-      title: `${org.instituteName} Practice Assessment 02`,
+      title: `${org.instituteName} NEET / MHT-CET Practice Paper 02`,
       code: `${short}-PRAC-02`,
       classLevel: 'Class 12th',
       target: 'MHT-CET',
-      subject: 'Mathematics',
+      subject: 'Combined PCMB',
       examTag: 'MHT-CET (+2/0)',
-      folderName: `${short} Starter Question Bank`,
+      folderName: `${short} PCMB Starter Bank`,
       examType: 'Chapterwise Test',
       durationMinutes: 45,
       totalMarks: 0,
@@ -401,7 +462,7 @@ function seedStarterExamWorkspace(org: Organization, store: TenantRuntimeDatabas
       randomizeQuestions: false,
       assignedCount: 0,
       assignedBatchIds: [],
-      instructions: 'Draft paper ready for faculty question import or AI OCR upload.',
+      instructions: 'Draft PCMB paper ready for faculty question import or AI OCR upload.',
       createdAt: now,
       updatedAt: now,
     },
@@ -409,10 +470,11 @@ function seedStarterExamWorkspace(org: Organization, store: TenantRuntimeDatabas
 
   store.collections.courses = {
     [course1Id]: {
-      name: `${org.instituteName} JEE Main Complete Foundation`,
-      description: 'Structured live & recorded modules, chapterwise DPPs, and full-length CBT test analysis.',
+      name: `${org.instituteName} Integrated PCMB Foundation (JEE / NEET / CET)`,
+      description: 'Structured modules across Physics, Chemistry, Mathematics & Biology with daily DPPs and CBT mock analytics.',
       category: 'JEE Main',
       classLevel: 'Class 12th',
+      subjectTag: 'PHYSICS · CHEMISTRY · MATHEMATICS · BIOLOGY',
       price: 2999,
       thumbnailUrl: '',
       status: 'PUBLISHED',
@@ -420,13 +482,13 @@ function seedStarterExamWorkspace(org: Organization, store: TenantRuntimeDatabas
       modules: [
         {
           id: `mod_${short.toLowerCase()}_1`,
-          title: 'Module 1: Differential & Integral Calculus',
-          chapters: ['Limits & Continuity', 'Definite Integration', 'Differential Equations'],
+          title: 'Module 1: Physics & Chemistry Core Foundations',
+          chapters: ['Electrostatics & Gauss Law', 'Chemical Kinetics', 'Thermodynamics'],
         },
         {
           id: `mod_${short.toLowerCase()}_2`,
-          title: 'Module 2: Algebra, Matrices & Determinants',
-          chapters: ['Quadratic Equations', 'Matrices & Determinants'],
+          title: 'Module 2: Mathematics & Biology Mastery',
+          chapters: ['Definite Integration', 'Cell Cycle & Genetics', 'NCERT Exemplar Drills'],
         },
       ],
       createdAt: now,
@@ -436,12 +498,12 @@ function seedStarterExamWorkspace(org: Organization, store: TenantRuntimeDatabas
 
   store.collections.testSeries = {
     [series1Id]: {
-      title: `${org.instituteName} All-India CBT Mock Series 2026`,
-      description: 'NTA-pattern Computer-Based Tests with instant rank card, accuracy metrics, and solutions.',
+      title: `${org.instituteName} PCMB All-India CBT Test Series 2026`,
+      description: 'NTA-pattern Computer-Based Tests across Physics, Chemistry, Mathematics & Biology with instant rank card and solutions.',
       price: 499,
       mockTestCount: 1,
       classLevel: 'Class 12th',
-      examCategory: 'JEE Main Mathematics',
+      examCategory: 'JEE Main PCMB',
       status: 'PUBLISHED',
       examIds: [examLiveId],
       createdAt: now,
@@ -451,14 +513,14 @@ function seedStarterExamWorkspace(org: Organization, store: TenantRuntimeDatabas
 
   store.collections.studyMaterials = {
     [material1Id]: {
-      title: `${org.instituteName} — Calculus & Algebra Formula Compendium`,
-      description: 'Quick-revision formula sheet for JEE Main & MHT-CET candidates.',
+      title: `${org.instituteName} — PCMB Formula & Concept Compendium`,
+      description: 'Quick-revision formula sheet for Physics, Chemistry, Mathematics & Biology candidates.',
       classLevel: 'Both',
-      subject: 'Mathematics',
-      chapter: 'Formula Revision',
+      subject: 'Combined PCMB',
+      chapter: 'PCMB Formula Revision',
       category: 'Formula Sheets',
       fileUrl: '/api/public/starter-formula-sheet',
-      fileName: `${short}-Formula-Sheet.txt`,
+      fileName: `${short}-PCMB-Formula-Sheet.txt`,
       fileSize: '4 KB',
       downloadCount: 0,
       createdAt: now,
@@ -468,8 +530,8 @@ function seedStarterExamWorkspace(org: Organization, store: TenantRuntimeDatabas
 
   store.collections.notifications = {
     [notif1Id]: {
-      title: `Welcome to ${org.instituteName} Examination Portal`,
-      message: `${short}-MOCK-01 is LIVE now in My Exams. Attempt the 30-minute CBT mock test and review your instant scorecard.`,
+      title: `Welcome to ${org.instituteName} PCMB Portal`,
+      message: `${short}-PCMB-01 is LIVE now in My Exams. Attempt the Physics, Chemistry, Mathematics & Biology mock test and review your instant scorecard.`,
       type: 'EXAM_REMINDER',
       targetType: 'ALL',
       readBy: [],

@@ -256,13 +256,23 @@ export const salarApi = {
     payload: {
       mode?: 'TRIAL' | 'CUSTOM_DATE';
       billingCycle: BillingCycle;
+      planCode?: PlanCode;
+      studentCapacity?: number;
+      examCapacity?: number;
+      customPrice?: number | null;
+      generateInvoice?: boolean;
       startDate?: string;
       expirationDate?: string;
       days?: number;
       notes?: string;
     }
   ) =>
-    apiRequest<{ organization: Organization; license: LicenseRecord }>(
+    apiRequest<{
+      organization: Organization;
+      license: LicenseRecord;
+      subscription?: import('../types/salar').SubscriptionRecord;
+      invoice?: SubscriptionInvoice;
+    }>(
       `/api/owner/organizations/${encodeURIComponent(organizationId)}/validity`,
       { method: 'POST', body: JSON.stringify(payload) }
     ),
@@ -404,6 +414,10 @@ export const salarApi = {
       newState?: string;
       newPlanCode?: PlanCode;
       newBillingCycle?: BillingCycle;
+      newStartDate?: string;
+      newExpirationDate?: string;
+      newTrialDays?: number;
+      newCustomDays?: number;
       initialAdminPasscode?: string;
     }
   ) =>

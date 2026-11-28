@@ -27,54 +27,25 @@ import type {
   QuestionResultItem,
 } from '../types/portal';
 
-export const DEFAULT_INSTITUTE_SETTINGS: InstituteSettings = {
-  instituteName: "Giri Sir's Gurukul Classes",
-  tagline: 'Precision Mathematics for JEE Main, JEE Advanced & MHT-CET',
-  storageTag: 'gurukul-vault-prod',
-  logoUrl: '',
-  logoWidth: 40,
-  logoHeight: 40,
-  heroImage: '/src/assets/images/hero_clean_math_1795625096103.jpg',
-  heroTitle: 'Master IIT-JEE & MHT-CET Mathematics With Precision Testing',
-  heroSubtitle:
-    'Computer-Based Test (CBT) engine, structured chapterwise DPP banks, and deep mathematical evaluation built for Class 11th & Class 12th aspirants.',
-  primaryCta: 'Student Portal Login',
-  secondaryCta: 'Quick Join Candidate',
-  faviconUrl: '',
-  primaryColor: '#0032A0',
-  secondaryColor: '#2563EB',
-  address: 'New Usmanpura, Chhatrapati Sambhajinagar (Aurangabad), Maharashtra 431001',
-  phone: '+91 98230 00000',
-  whatsapp: '+91 98230 00000',
-  email: 'admissions@girisirgurukul.in',
-  website: 'https://girisirgurukul.in',
-  socialLinks: {
-    youtube: 'https://youtube.com',
-    instagram: 'https://instagram.com',
-    telegram: 'https://t.me',
-  },
-  portalConfig: {
-    allowGoogleAuth: true,
-    allowEmailPasswordAuth: true,
-    allowQuickJoin: true,
-    allowPublicRegistration: true,
-    autoSubmitOnExpiry: true,
-    strictNegativeMarking: true,
-    upiId: 'gurukulclasses@upi',
-    upiPayeeName: "Giri Sir's Gurukul Classes",
-    bankDetails: 'Bank Transfer / UPI verification via 12-digit UTR reference number.',
-    storageProvider: 'Local Vault + Firestore Sync',
-    enableEmailNotifications: true,
-    enableWhatsAppNotifications: true,
-    compactTables: false,
-  },
-};
+import {
+  GURUKUL_COURSES_CATALOG,
+  GURUKUL_DEFAULT_SETTINGS,
+  GURUKUL_TEST_SERIES_CATALOG,
+} from './gurukulData';
+
+export const DEFAULT_INSTITUTE_SETTINGS: InstituteSettings = GURUKUL_DEFAULT_SETTINGS;
 
 export const GENERATED_ASSETS = {
-  hero: '/src/assets/images/hero_clean_math_1795625096103.jpg',
-  courseJeeMain: '/src/assets/images/course_jee_main_1795625075936.jpg',
-  courseJeeAdv: '/src/assets/images/course_jee_adv_1795625075528.jpg',
-  courseMhtCet: '/src/assets/images/course_mht_cet_1795625075934.jpg',
+  hero: '/assets/gurukul/hero_banner_0.webp',
+  logo: '/assets/gurukul/logo.webp',
+  mentoring: '/assets/gurukul/study_group.webp',
+  campusResidential: '/assets/gurukul/campus_0.webp',
+  campusDaycare: '/assets/gurukul/campus_1.webp',
+  resultPoster: '/assets/gurukul/result_0.webp',
+  courseJeeMain: '/assets/gurukul/course_two-year-iit-jee-integrated-course.webp',
+  courseJeeAdv: '/assets/gurukul/course_two-year-iit-jee-integrated-course.webp',
+  courseNeet: '/assets/gurukul/course_two-year-neet-integrated-course.webp',
+  courseMhtCet: '/assets/gurukul/course_three-year-foundation-programme.webp',
   facultyDirector: '/src/assets/images/faculty_director_1795625076728.jpg',
 };
 
@@ -108,9 +79,15 @@ export function exportToCsv(filename: string, headers: string[], rows: Array<Arr
 
 export async function compressImageBlobToDataUrl(
   blob: Blob,
-  fallbackDataUrl?: string
+  fallbackDataUrl?: string,
+  maxTargetChars = 420_000
 ): Promise<string> {
-  if (blob.size <= 180 * 1024 && fallbackDataUrl && fallbackDataUrl.startsWith('data:image/')) {
+  if (
+    blob.size <= 160 * 1024 &&
+    fallbackDataUrl &&
+    fallbackDataUrl.startsWith('data:image/') &&
+    fallbackDataUrl.length <= maxTargetChars
+  ) {
     return fallbackDataUrl;
   }
 
@@ -119,38 +96,47 @@ export async function compressImageBlobToDataUrl(
     const img = new Image();
     img.onload = () => {
       try {
-        const maxDim = 1400;
-        let w = img.naturalWidth || img.width || 800;
-        let h = img.naturalHeight || img.height || 600;
-        if (w > maxDim || h > maxDim) {
-          const ratio = Math.min(maxDim / w, maxDim / h);
-          w = Math.max(1, Math.round(w * ratio));
-          h = Math.max(1, Math.round(h * ratio));
+        const naturalW = img.naturalWidth || img.width || 800;
+        const naturalH = img.naturalHeight || img.height || 600;
+        const dimSteps = [1400, 1100, 860, 680];
+        const qualitySteps = [0.86, 0.74, 0.62, 0.5];
+        let bestUrl = '';
+
+        for (const maxDim of dimSteps) {
+          let w = naturalW;
+          let h = naturalH;
+          if (w > maxDim || h > maxDim) {
+            const ratio = Math.min(maxDim / w, maxDim / h);
+            w = Math.max(1, Math.round(w * ratio));
+            h = Math.max(1, Math.round(h * ratio));
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) break;
+
+          // White background handles transparent PNG screenshots cleanly when exported as WebP/JPEG
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, w, h);
+          ctx.drawImage(img, 0, 0, w, h);
+
+          for (const q of qualitySteps) {
+            let candidate = canvas.toDataURL('image/webp', q);
+            if (!candidate.startsWith('data:image/webp')) {
+              candidate = canvas.toDataURL('image/jpeg', q);
+            }
+            bestUrl = candidate;
+            if (candidate.length <= maxTargetChars) {
+              URL.revokeObjectURL(objectUrl);
+              resolve(candidate);
+              return;
+            }
+          }
         }
 
-        const canvas = document.createElement('canvas');
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          URL.revokeObjectURL(objectUrl);
-          resolve(fallbackDataUrl || '');
-          return;
-        }
-        // White background handles transparent PNG screenshots cleanly when exported as WebP/JPEG
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillRect(0, 0, w, h);
-        ctx.drawImage(img, 0, 0, w, h);
-
-        let dataUrl = canvas.toDataURL('image/webp', 0.88);
-        if (!dataUrl.startsWith('data:image/webp')) {
-          dataUrl = canvas.toDataURL('image/jpeg', 0.86);
-        }
-        if (dataUrl.length > 480_000) {
-          dataUrl = canvas.toDataURL('image/jpeg', 0.72);
-        }
         URL.revokeObjectURL(objectUrl);
-        resolve(dataUrl);
+        resolve(bestUrl || fallbackDataUrl || '');
       } catch {
         URL.revokeObjectURL(objectUrl);
         resolve(fallbackDataUrl || '');
@@ -167,14 +153,24 @@ export async function compressImageBlobToDataUrl(
 export async function uploadFileToServer(
   file: File
 ): Promise<{ url: string; fileName: string; fileSize: string; persistent?: boolean }> {
-  const base64Data = await new Promise<string>((resolve, reject) => {
+  const isImage = file.type.startsWith('image/');
+  let base64Data = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result || ''));
     reader.onerror = () => reject(new Error('Failed to read file'));
     reader.readAsDataURL(file);
   });
 
-  const isImage = file.type.startsWith('image/');
+  let uploadMime = file.type;
+  // Pre-compress oversized images (> 1.2 MB) so Vercel Serverless Functions never reject with HTTP 413
+  if (isImage && file.size > 1_200_000) {
+    const preCompressed = await compressImageBlobToDataUrl(file, base64Data, 950_000);
+    if (preCompressed && preCompressed.startsWith('data:image/')) {
+      base64Data = preCompressed;
+      const mimeMatch = preCompressed.match(/^data:(image\/[a-zA-Z0-9+.-]+);/);
+      if (mimeMatch) uploadMime = mimeMatch[1];
+    }
+  }
 
   try {
     const resp = await fetch('/api/files/upload', {
@@ -182,19 +178,31 @@ export async function uploadFileToServer(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         fileName: file.name,
-        mimeType: file.type,
+        mimeType: uploadMime,
         base64Data,
       }),
     });
-    const data = await resp.json();
-    if (!resp.ok) {
-      throw new Error(data.error || 'File upload failed');
+    const rawText = await resp.text();
+    let data: {
+      url?: string;
+      fileName?: string;
+      fileSize?: string;
+      persistent?: boolean;
+      error?: string;
+    } = {};
+    try {
+      data = rawText ? JSON.parse(rawText) : {};
+    } catch {
+      data = { error: resp.status === 413 ? 'File is too large for server upload.' : rawText || `Upload failed (${resp.status})` };
+    }
+    if (!resp.ok || !data.url) {
+      throw new Error(data.error || `File upload failed (${resp.status})`);
     }
     // On ephemeral serverless environments without Vercel Blob / Upstash KV configured,
     // embed a compact self-contained Data URL for images so every student sees the diagram
     // regardless of which serverless instance handles their request.
     if (isImage && data.persistent === false) {
-      const compactUrl = await compressImageBlobToDataUrl(file, base64Data);
+      const compactUrl = await compressImageBlobToDataUrl(file, base64Data, 420_000);
       if (compactUrl) {
         return {
           url: compactUrl,
@@ -204,10 +212,15 @@ export async function uploadFileToServer(
         };
       }
     }
-    return data;
+    return {
+      url: data.url,
+      fileName: data.fileName || file.name,
+      fileSize: data.fileSize || `${Math.max(1, Math.round(file.size / 1024))} KB`,
+      persistent: data.persistent,
+    };
   } catch (err) {
     if (isImage) {
-      const compactUrl = await compressImageBlobToDataUrl(file, base64Data);
+      const compactUrl = await compressImageBlobToDataUrl(file, base64Data, 420_000);
       if (compactUrl && compactUrl.length <= 650_000) {
         return {
           url: compactUrl,
@@ -219,6 +232,52 @@ export async function uploadFileToServer(
     }
     throw err;
   }
+}
+
+export async function publishPublicCbtSnapshot(params: {
+  orgId: string;
+  instituteName: string;
+  exam: Exam;
+  questions?: Array<Record<string, unknown> & { id: string; questionImageUrl?: string }>;
+}): Promise<void> {
+  const orgId = params.orgId || 'SALAR-ORG-00001';
+  const bearer = (() => {
+    try {
+      if (orgId === 'SALAR-ORG-00001') {
+        return window.sessionStorage.getItem('salar_root_admin_bearer') || '';
+      }
+      return window.sessionStorage.getItem(`salar_tenant_bearer_${orgId}_admin`) || '';
+    } catch {
+      return '';
+    }
+  })();
+
+  let questionsList = params.questions;
+  if (!questionsList) {
+    const snap = await getDocs(
+      query(collection(db, 'exams', params.exam.id, 'questions'), orderBy('orderIndex', 'asc'))
+    );
+    questionsList = snap.docs.map((d) => ({
+      id: d.id,
+      ...(d.data() as Record<string, unknown>),
+    })) as Array<Record<string, unknown> & { id: string; questionImageUrl?: string }>;
+  }
+
+  await fetch('/api/public/cbt/publish-snapshot', {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest',
+      ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
+    },
+    body: JSON.stringify({
+      orgId,
+      instituteName: params.instituteName,
+      exam: params.exam,
+      questions: questionsList,
+    }),
+  });
 }
 
 export async function extractMathQuestionsWithOCR(params: {
@@ -395,7 +454,7 @@ export async function cloneExamIsolated(sourceExam: Exam, newTitle: string, newC
       code: newCode,
       classLevel: sourceExam.classLevel,
       target: sourceExam.target,
-      subject: sourceExam.subject || 'Mathematics',
+      subject: sourceExam.subject || 'Combined PCMB',
       examTag: sourceExam.examTag || '',
       folderName: sourceExam.folderName || 'General',
       examType: sourceExam.examType || 'Mock Test',
@@ -427,7 +486,7 @@ export async function cloneExamIsolated(sourceExam: Exam, newTitle: string, newC
         examStatus: 'DRAFT',
         orderIndex: typeof qData.orderIndex === 'number' ? qData.orderIndex : idx,
         title: qData.title || `Q${idx + 1}`,
-        subject: qData.subject || sourceExam.subject || 'Mathematics',
+        subject: qData.subject || sourceExam.subject || 'Combined PCMB',
         questionText: qData.questionText || '',
         questionImageUrl: qData.questionImageUrl || '',
         questionType: qData.questionType,
@@ -491,6 +550,7 @@ export async function deleteExamCompletely(examId: string) {
 export async function importBankQuestionsIntoExam(exam: Exam, selectedQuestions: Question[]) {
   try {
     const existingSnap = await getDocs(collection(db, 'exams', exam.id, 'questions'));
+    const existingMarks = existingSnap.docs.reduce((sum, d) => sum + Number(d.data()?.positiveMarks || 0), 0);
     const startIdx = existingSnap.size;
     let addedMarks = 0;
     const now = new Date().toISOString();
@@ -522,7 +582,7 @@ export async function importBankQuestionsIntoExam(exam: Exam, selectedQuestions:
 
     batch.update(doc(db, 'exams', exam.id), {
       questionCount: startIdx + selectedQuestions.length,
-      totalMarks: (exam.totalMarks || 0) + addedMarks,
+      totalMarks: existingMarks + addedMarks,
       updatedAt: now,
     });
 
@@ -573,7 +633,7 @@ export async function approvePaymentTransaction(payment: PaymentRecord, verifier
 }
 
 /**
- * Seeds clearly labeled Mathematics demo data (Class 11th & 12th, JEE Main, JEE Advanced, MHT-CET)
+ * Seeds balanced PCMB (Physics, Chemistry, Mathematics, Biology) demo workspace data
  * only on explicit Admin action when setting up a fresh workspace.
  */
 export async function seedMathematicsDemoData(preserveSettings?: InstituteSettings) {
@@ -586,17 +646,30 @@ export async function seedMathematicsDemoData(preserveSettings?: InstituteSettin
     updatedAt: now,
   });
 
-  // 2. Faculty
+  // 2. PCMB Faculty
   const facultyList: Array<Omit<FacultyProfile, 'id'>> = [
     {
-      name: 'Prof. Giri Sir',
-      qualification: 'M.Sc. Mathematics, IIT-JEE Mentor (16+ Yrs)',
-      subjectSpecialization: 'Calculus, Coordinate Geometry & JEE Advanced Algebra',
+      name: 'Prof. Pradip Giri',
+      qualification: 'IITian · Academic Director (16+ Yrs)',
+      subjectSpecialization: 'Physics — Mechanics, Electrodynamics & JEE Advanced',
       experience: '16 Years',
-      email: 'giri.sir@girisirgurukul.in',
-      contactNumber: '+91 98230 11001',
+      email: 'gurukulclassestech@gmail.com',
+      contactNumber: '+91 9860968994',
       photoUrl: GENERATED_ASSETS.facultyDirector,
-      assignedBatches: ['Sankalp JEE 2026 (12th)', 'Aarambh IIT 2027 (11th)'],
+      assignedBatches: ['Sankalp JEE 2026 (12th)', 'Aarambh Foundation (11th)'],
+      status: 'ACTIVE',
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      name: 'Prof. Sneha Kulkarni',
+      qualification: 'M.Sc. Organic & Physical Chemistry',
+      subjectSpecialization: 'Chemistry — Physical, Organic & NCERT Mastery',
+      experience: '11 Years',
+      email: 'chemistry@girisirgurukul.in',
+      contactNumber: '+91 98230 11002',
+      photoUrl: '',
+      assignedBatches: ['Sankalp JEE 2026 (12th)', 'NEET Target 2026'],
       status: 'ACTIVE',
       createdAt: now,
       updatedAt: now,
@@ -604,12 +677,25 @@ export async function seedMathematicsDemoData(preserveSettings?: InstituteSettin
     {
       name: 'Prof. Rohan Deshmukh',
       qualification: 'B.Tech, M.Tech (COEP Pune)',
-      subjectSpecialization: 'Vectors, 3D Geometry & MHT-CET Speed Maths',
+      subjectSpecialization: 'Mathematics — Calculus, Vectors & JEE / MHT-CET',
       experience: '9 Years',
-      email: 'rohan.d@girisirgurukul.in',
-      contactNumber: '+91 98230 11002',
+      email: 'maths@girisirgurukul.in',
+      contactNumber: '+91 98230 11003',
       photoUrl: '',
-      assignedBatches: ['MHT-CET Target 2026'],
+      assignedBatches: ['Sankalp JEE 2026 (12th)'],
+      status: 'ACTIVE',
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      name: 'Dr. Ananya Joshi',
+      qualification: 'M.Sc., Ph.D. Biotechnology',
+      subjectSpecialization: 'Biology — Botany, Zoology & NEET-UG NCERT',
+      experience: '10 Years',
+      email: 'biology@girisirgurukul.in',
+      contactNumber: '+91 98230 11004',
+      photoUrl: '',
+      assignedBatches: ['NEET Target 2026'],
       status: 'ACTIVE',
       createdAt: now,
       updatedAt: now,
@@ -623,12 +709,12 @@ export async function seedMathematicsDemoData(preserveSettings?: InstituteSettin
   const b1Ref = doc(collection(db, 'batches'));
   const b2Ref = doc(collection(db, 'batches'));
   batch.set(b1Ref, {
-    name: 'Sankalp JEE 2026 (Class 12th)',
+    name: 'Sankalp JEE & MHT-CET 2026 (Class 12th)',
     classLevel: 'Class 12th',
     academicYear: '2025-26',
-    schedule: 'Mon–Sat · 07:30 AM – 09:30 AM',
+    schedule: 'Mon–Sat · 07:30 AM – 01:30 PM (PCMB)',
     capacity: 120,
-    facultyName: 'Prof. Giri Sir',
+    facultyName: 'Prof. Pradip Giri',
     assignedExamIds: [],
     studentCount: 0,
     status: 'ACTIVE',
@@ -636,12 +722,12 @@ export async function seedMathematicsDemoData(preserveSettings?: InstituteSettin
     updatedAt: now,
   });
   batch.set(b2Ref, {
-    name: 'Aarambh Foundation (Class 11th)',
+    name: 'NEET-UG & PCB Integrated (Class 11th)',
     classLevel: 'Class 11th',
     academicYear: '2025-26',
-    schedule: 'Mon–Sat · 04:00 PM – 06:00 PM',
+    schedule: 'Mon–Sat · 02:00 PM – 08:00 PM (PCB)',
     capacity: 100,
-    facultyName: 'Prof. Rohan Deshmukh',
+    facultyName: 'Dr. Ananya Joshi',
     assignedExamIds: [],
     studentCount: 0,
     status: 'ACTIVE',
@@ -649,12 +735,12 @@ export async function seedMathematicsDemoData(preserveSettings?: InstituteSettin
     updatedAt: now,
   });
 
-  // 4. Question Folders & Master Question Bank
+  // 4. Question Folder & Balanced PCMB Question Bank
   const f1Ref = doc(collection(db, 'questionFolders'));
   batch.set(f1Ref, {
-    name: 'Definite Integration & Differential Equations [DEMO]',
+    name: 'PCMB Mixed Diagnostic Bank [DEMO]',
     classLevel: 'Class 12th',
-    chapter: 'Integral Calculus',
+    chapter: 'Physics, Chemistry, Mathematics & Biology',
     examCategory: 'JEE Main',
     createdAt: now,
   });
@@ -662,9 +748,63 @@ export async function seedMathematicsDemoData(preserveSettings?: InstituteSettin
   const sampleQuestions: Array<Omit<Question, 'id'>> = [
     {
       folderId: f1Ref.id,
-      folderName: 'Definite Integration & Differential Equations [DEMO]',
-      title: 'King Property Definite Integral (JEE Main)',
-      questionText: 'Evaluate the definite integral $I = \\int_{0}^{\\pi/2} \\frac{\\sqrt{\\sin x}}{\\sqrt{\\sin x} + \\sqrt{\\cos x}}\\,dx$.',
+      folderName: 'PCMB Mixed Diagnostic Bank [DEMO]',
+      title: 'Electrostatics — Gauss Law Flux (Physics)',
+      subject: 'Physics',
+      questionText:
+        'A point charge $+q$ is placed at the centre of a cube of side $a$. What is the electric flux passing through one face of the cube?',
+      questionType: 'SINGLE_MCQ',
+      options: [
+        { id: 'A', text: '$\\frac{q}{6\\varepsilon_0}$' },
+        { id: 'B', text: '$\\frac{q}{\\varepsilon_0}$' },
+        { id: 'C', text: '$\\frac{q}{4\\varepsilon_0}$' },
+        { id: 'D', text: '$\\frac{q}{12\\varepsilon_0}$' },
+      ],
+      correctAnswer: 'A',
+      explanation: 'By symmetry, total flux $q/\\varepsilon_0$ divides equally among all 6 faces.',
+      positiveMarks: 4,
+      negativeMarks: 1,
+      difficulty: 'EASY',
+      classLevel: 'Class 12th',
+      chapter: 'Electrostatics',
+      topic: 'Gauss Law',
+      examCategory: 'JEE Main',
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      folderId: f1Ref.id,
+      folderName: 'PCMB Mixed Diagnostic Bank [DEMO]',
+      title: 'Chemical Equilibrium — Kp and Kc Relation (Chemistry)',
+      subject: 'Chemistry',
+      questionText:
+        'For the reaction $\\text{N}_2(g) + 3\\text{H}_2(g) \\rightleftharpoons 2\\text{NH}_3(g)$, what is the value of $\\Delta n_g$ in $K_p = K_c(RT)^{\\Delta n_g}$?',
+      questionType: 'SINGLE_MCQ',
+      options: [
+        { id: 'A', text: '$-2$' },
+        { id: 'B', text: '$+2$' },
+        { id: 'C', text: '$0$' },
+        { id: 'D', text: '$-1$' },
+      ],
+      correctAnswer: 'A',
+      explanation: '$\\Delta n_g = n_{\\text{products}} - n_{\\text{reactants}} = 2 - (1 + 3) = -2$.',
+      positiveMarks: 4,
+      negativeMarks: 1,
+      difficulty: 'EASY',
+      classLevel: 'Class 11th',
+      chapter: 'Chemical Equilibrium',
+      topic: 'Equilibrium Constants',
+      examCategory: 'NEET',
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      folderId: f1Ref.id,
+      folderName: 'PCMB Mixed Diagnostic Bank [DEMO]',
+      title: 'King Property Definite Integral (Mathematics)',
+      subject: 'Mathematics',
+      questionText:
+        'Evaluate the definite integral $I = \\int_{0}^{\\pi/2} \\frac{\\sqrt{\\sin x}}{\\sqrt{\\sin x} + \\sqrt{\\cos x}}\\,dx$.',
       questionType: 'SINGLE_MCQ',
       options: [
         { id: 'A', text: '$\\frac{\\pi}{4}$' },
@@ -673,7 +813,8 @@ export async function seedMathematicsDemoData(preserveSettings?: InstituteSettin
         { id: 'D', text: '$\\frac{\\pi}{8}$' },
       ],
       correctAnswer: 'A',
-      explanation: 'Applying $\\int_0^a f(x)dx = \\int_0^a f(a-x)dx$, adding gives $2I = \\int_0^{\\pi/2} 1\\,dx = \\frac{\\pi}{2} \\implies I = \\frac{\\pi}{4}$.',
+      explanation:
+        'Applying $\\int_0^a f(x)dx = \\int_0^a f(a-x)dx$, adding gives $2I = \\int_0^{\\pi/2} 1\\,dx = \\frac{\\pi}{2} \\implies I = \\frac{\\pi}{4}$.',
       positiveMarks: 4,
       negativeMarks: 1,
       difficulty: 'EASY',
@@ -686,63 +827,26 @@ export async function seedMathematicsDemoData(preserveSettings?: InstituteSettin
     },
     {
       folderId: f1Ref.id,
-      folderName: 'Definite Integration & Differential Equations [DEMO]',
-      title: 'Matrices & Determinant Trace Problem',
-      questionText: 'If $A = \\begin{pmatrix} 2 & 1 \\\\ 3 & 4 \\end{pmatrix}$, find the value of $\\det(A^2 - 6A + 5I)$.',
-      questionType: 'INTEGER',
-      options: [],
-      correctAnswer: '0',
-      explanation: 'By Cayley-Hamilton theorem, characteristic equation is $\\lambda^2 - \\text{tr}(A)\\lambda + |A| = \\lambda^2 - 6\\lambda + 5 = 0$. Hence $A^2 - 6A + 5I = O$, so determinant is $0$.',
-      positiveMarks: 4,
-      negativeMarks: 0,
-      difficulty: 'MEDIUM',
-      classLevel: 'Class 12th',
-      chapter: 'Matrices & Determinants',
-      topic: 'Cayley-Hamilton Theorem',
-      examCategory: 'JEE Advanced',
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      folderId: f1Ref.id,
-      folderName: 'Definite Integration & Differential Equations [DEMO]',
-      title: 'Sum of Infinite Geometric Series (Class 11th)',
-      questionText: 'Find the sum $\\sum_{n=1}^{\\infty} \\frac{n}{2^n}$.',
-      questionType: 'NUMERICAL',
-      options: [],
-      correctAnswer: '2',
-      explanation: 'Using AGP formula $S = \\frac{a}{1-r} + \\frac{dr}{(1-r)^2}$ with $a=1/2, d=1, r=1/2$, we get $S = 2$.',
-      positiveMarks: 4,
-      negativeMarks: 1,
-      difficulty: 'MEDIUM',
-      classLevel: 'Class 11th',
-      chapter: 'Sequences and Series',
-      topic: 'Arithmetico-Geometric Progression',
-      examCategory: 'JEE Main',
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      folderId: f1Ref.id,
-      folderName: 'Definite Integration & Differential Equations [DEMO]',
-      title: 'Trigonometric Identity (MHT-CET)',
-      questionText: 'If $\\alpha + \\beta = \\frac{\\pi}{4}$, then $(1 + \\tan\\alpha)(1 + \\tan\\beta)$ equals:',
+      folderName: 'PCMB Mixed Diagnostic Bank [DEMO]',
+      title: 'Cell Cycle & Division — Crossing Over Stage (Biology)',
+      subject: 'Biology',
+      questionText: 'During Meiosis-I, crossing over occurs during which substage of Prophase-I?',
       questionType: 'SINGLE_MCQ',
       options: [
-        { id: 'A', text: '$1$' },
-        { id: 'B', text: '$2$' },
-        { id: 'C', text: '$\\sqrt{2}$' },
-        { id: 'D', text: '$4$' },
+        { id: 'A', text: 'Leptotene' },
+        { id: 'B', text: 'Zygotene' },
+        { id: 'C', text: 'Pachytene' },
+        { id: 'D', text: 'Diakinesis' },
       ],
-      correctAnswer: 'B',
-      explanation: '$\\tan(\\alpha+\\beta)=1 \\implies \\tan\\alpha + \\tan\\beta + \\tan\\alpha\\tan\\beta = 1 \\implies (1+\\tan\\alpha)(1+\\tan\\beta) = 2$.',
-      positiveMarks: 2,
-      negativeMarks: 0,
+      correctAnswer: 'C',
+      explanation: 'Crossing over mediated by recombinase enzyme takes place in the Pachytene substage.',
+      positiveMarks: 4,
+      negativeMarks: 1,
       difficulty: 'EASY',
       classLevel: 'Class 11th',
-      chapter: 'Trigonometric Functions',
-      topic: 'Compound Angles',
-      examCategory: 'MHT-CET',
+      chapter: 'Cell Cycle and Cell Division',
+      topic: 'Meiosis I',
+      examCategory: 'NEET',
       createdAt: now,
       updatedAt: now,
     },
@@ -751,35 +855,38 @@ export async function seedMathematicsDemoData(preserveSettings?: InstituteSettin
     batch.set(doc(collection(db, 'questions')), q);
   });
 
-  // 5. Sample Isolated Exam (LIVE)
+  // 5. Sample Isolated PCMB Exam (LIVE)
   const examRef = doc(collection(db, 'exams'));
   batch.set(examRef, {
-    title: 'JEE Main Calculus & Algebra Mock Test 01 [DEMO]',
-    code: 'GURUKUL-JEE-M01',
+    title: 'PCMB Combined Diagnostic CBT 01 [DEMO]',
+    code: 'GURUKUL-PCMB-01',
     classLevel: 'Class 12th',
     target: 'JEE Main',
-    folderName: 'JEE Main 2026',
-    examType: 'Chapterwise CBT',
+    subject: 'Combined PCMB',
+    folderName: 'PCMB Integrated 2026',
+    examType: 'Combined PCMB CBT',
     durationMinutes: 60,
-    totalMarks: 12,
-    questionCount: 3,
+    totalMarks: 16,
+    questionCount: 4,
     openingDate: now.slice(0, 10),
     status: 'LIVE',
     isPublic: true,
     assignedCount: 0,
-    assignedBatchIds: [b1Ref.id],
-    instructions: '1. Each MCQ carries +4 marks for correct answer and -1 for wrong answer.\n2. Integer/Numerical questions have no negative marking unless specified.\n3. Timer runs continuously once started.',
+    assignedBatchIds: [b1Ref.id, b2Ref.id],
+    instructions:
+      '1. Covers Physics, Chemistry, Mathematics & Biology.\n2. +4 marks for each correct response and -1 for incorrect MCQ.\n3. Timer runs continuously once started.',
     createdAt: now,
     updatedAt: now,
   });
 
-  sampleQuestions.slice(0, 3).forEach((q, idx) => {
+  sampleQuestions.forEach((q, idx) => {
     const eqRef = doc(collection(db, 'exams', examRef.id, 'questions'));
     batch.set(eqRef, {
       examId: examRef.id,
       examStatus: 'LIVE',
       orderIndex: idx,
       title: q.title,
+      subject: q.subject || 'Combined PCMB',
       questionText: q.questionText,
       questionImageUrl: '',
       questionType: q.questionType,
@@ -795,112 +902,30 @@ export async function seedMathematicsDemoData(preserveSettings?: InstituteSettin
     });
   });
 
-  // 6. Courses
-  const courses: Array<Omit<Course, 'id'>> = [
-    {
-      name: 'JEE Main Mathematics Complete Mastery [DEMO]',
-      description: 'Full Class 11th & 12th Mathematics syllabus with Calculus, Algebra, Vectors & 3D, DPPs and weekly CBT tests.',
-      category: 'JEE Main',
-      classLevel: 'Class 12th',
-      price: 4999,
-      thumbnailUrl: GENERATED_ASSETS.courseJeeMain,
-      status: 'PUBLISHED',
-      enrolledCount: 0,
-      modules: [
-        {
-          id: 'mod-1',
-          title: 'Module 01: Differential & Integral Calculus',
-          chapters: [
-            { id: 'ch-1', title: 'Limits, Continuity & Differentiability', duration: '4h 30m' },
-            { id: 'ch-2', title: 'Definite Integration & Area Under Curves', duration: '5h 15m' },
-          ],
-        },
-      ],
+  // 6. Official Gurukul Courses
+  GURUKUL_COURSES_CATALOG.forEach((c) =>
+    batch.set(doc(collection(db, 'courses')), {
+      ...c,
       createdAt: now,
       updatedAt: now,
-    },
-    {
-      name: 'JEE Advanced Rankers Problem Solving [DEMO]',
-      description: 'High-order multi-concept problems in Matrices, Complex Numbers, Conics, and Functional Equations.',
-      category: 'JEE Advanced',
-      classLevel: 'Class 12th',
-      price: 6999,
-      thumbnailUrl: GENERATED_ASSETS.courseJeeAdv,
-      status: 'PUBLISHED',
-      enrolledCount: 0,
-      modules: [
-        {
-          id: 'mod-adv-1',
-          title: 'Module 01: Conic Sections & 3D Vectors',
-          chapters: [
-            { id: 'ch-adv-1', title: 'Parabola, Ellipse & Hyperbola Tangents', duration: '6h 00m' },
-          ],
-        },
-      ],
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      name: 'MHT-CET Mathematics 99+ Percentile Booster [DEMO]',
-      description: 'Speed-accuracy workshops, Maharashtra State Board + CET PYQ drills, and 25 full-length timed mock tests.',
-      category: 'MHT-CET',
-      classLevel: 'Class 12th',
-      price: 2499,
-      thumbnailUrl: GENERATED_ASSETS.courseMhtCet,
-      status: 'PUBLISHED',
-      enrolledCount: 0,
-      modules: [],
-      createdAt: now,
-      updatedAt: now,
-    },
-  ];
-  courses.forEach((c) => batch.set(doc(collection(db, 'courses')), c));
+    })
+  );
 
-  // 7. Test Series
-  const series = [
-    {
-      title: 'JEE Main Mathematics All-India CBT Series [DEMO]',
-      description: '20 NTA-pattern Mathematics mock tests with instant scorecards, accuracy breakdown & solutions.',
-      price: 999,
-      mockTestCount: 20,
-      classLevel: 'Class 12th',
-      examCategory: 'JEE Main Mathematics',
-      status: 'PUBLISHED',
-      examIds: [examRef.id],
+  // 7. Official Gurukul Test Series
+  GURUKUL_TEST_SERIES_CATALOG.forEach((ts, idx) =>
+    batch.set(doc(collection(db, 'testSeries')), {
+      ...ts,
+      examIds: idx === 0 ? [examRef.id] : [],
       createdAt: now,
       updatedAt: now,
-    },
-    {
-      title: 'JEE Advanced Mathematics Paper 1 & 2 Series [DEMO]',
-      description: '12 Paper-1 & Paper-2 multi-correct, integer & matrix-match Mathematics tests.',
-      price: 1499,
-      mockTestCount: 12,
-      classLevel: 'Class 12th',
-      examCategory: 'JEE Advanced Mathematics',
-      status: 'PUBLISHED',
-      examIds: [],
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      title: 'MHT-CET Mathematics 50-Question Sprint Series [DEMO]',
-      description: '25 MHT-CET 90-minute 100-mark Mathematics speed tests.',
-      price: 599,
-      mockTestCount: 25,
-      classLevel: 'Class 12th',
-      examCategory: 'MHT-CET Mathematics',
-      status: 'PUBLISHED',
-      examIds: [],
-      createdAt: now,
-      updatedAt: now,
-    },
-  ];
-  series.forEach((ts) => batch.set(doc(collection(db, 'testSeries')), ts));
+    })
+  );
 
   // 8. Notification
   batch.set(doc(collection(db, 'notifications')), {
-    title: 'JEE Main Calculus Mock Test 01 Live [DEMO]',
-    message: 'Students in Sankalp JEE 2026 can now attempt the 60-minute Calculus & Algebra CBT test from the Exams section.',
+    title: 'Admissions & PCMB CBT Series Open',
+    message:
+      'Physics, Chemistry, Mathematics & Biology batches for IIT-JEE, NEET, MHT-CET & Foundation are active. Contact +91 9860968994 for details.',
     type: 'EXAM_REMINDER',
     targetType: 'ALL',
     readBy: [],
@@ -909,3 +934,42 @@ export async function seedMathematicsDemoData(preserveSettings?: InstituteSettin
 
   await batch.commit();
 }
+
+export const seedPortalDemoData = seedMathematicsDemoData;
+
+export async function syncGurukulCoursesToFirestore(existingNames: string[]): Promise<number> {
+  const existingSet = new Set(existingNames.map((n) => n.trim().toLowerCase()));
+  const toAdd = GURUKUL_COURSES_CATALOG.filter((c) => !existingSet.has(c.name.trim().toLowerCase()));
+  if (toAdd.length === 0) return 0;
+
+  const now = new Date().toISOString();
+  const batch = writeBatch(db);
+  toAdd.forEach((c) => {
+    batch.set(doc(collection(db, 'courses')), {
+      ...c,
+      createdAt: now,
+      updatedAt: now,
+    });
+  });
+  await batch.commit();
+  return toAdd.length;
+}
+
+export async function syncGurukulTestSeriesToFirestore(existingTitles: string[]): Promise<number> {
+  const existingSet = new Set(existingTitles.map((t) => t.trim().toLowerCase()));
+  const toAdd = GURUKUL_TEST_SERIES_CATALOG.filter((ts) => !existingSet.has(ts.title.trim().toLowerCase()));
+  if (toAdd.length === 0) return 0;
+
+  const now = new Date().toISOString();
+  const batch = writeBatch(db);
+  toAdd.forEach((ts) => {
+    batch.set(doc(collection(db, 'testSeries')), {
+      ...ts,
+      createdAt: now,
+      updatedAt: now,
+    });
+  });
+  await batch.commit();
+  return toAdd.length;
+}
+

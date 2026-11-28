@@ -162,7 +162,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
     setSeedMessage('');
     try {
       await seedMathematicsDemoData(isIsolatedTenant ? settings : undefined);
-      setSeedMessage('Sample Class 11th & 12th Mathematics demo records created.');
+      setSeedMessage('Sample PCMB (Physics, Chemistry, Mathematics & Biology) workspace records created.');
     } catch (err) {
       setSeedMessage(err instanceof Error ? err.message : 'Unable to seed sample data. Ensure Admin auth is connected.');
     } finally {
@@ -217,7 +217,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
               className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-[#0032A0] bg-blue-50 border border-blue-200 hover:bg-blue-100 rounded-lg transition-colors"
             >
               <Sparkles className="w-3.5 h-3.5" />
-              {seeding ? 'Loading Sample Data...' : 'Load Sample Math Data [DEMO]'}
+              {seeding ? 'Syncing Gurukul Portal Data...' : 'Load Gurukul Portal Catalog'}
             </button>
           )}
           <button
@@ -239,13 +239,45 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
         </div>
       </div>
 
+      {tenantContext?.isTrial && (() => {
+        const daysLeft =
+          typeof tenantContext.trialDaysRemaining === 'number'
+            ? tenantContext.trialDaysRemaining
+            : tenantContext.licenseExpirationDate
+            ? Math.ceil((new Date(tenantContext.licenseExpirationDate).getTime() - Date.now()) / 86400000)
+            : 0;
+        return (
+          <div className="bg-blue-50/70 border border-blue-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="space-y-1 text-xs">
+              <p className="font-mono font-bold text-[#0032A0]">
+                TRIAL PLAN ACTIVE · {tenantContext.planCode || 'PRO'} TIER
+              </p>
+              <p className="text-slate-700 font-mono tabular-nums">
+                Window: {(tenantContext.licenseStartDate || '').slice(0, 10) || 'Active'} →{' '}
+                {(tenantContext.licenseExpirationDate || '').slice(0, 10) || '—'} ·{' '}
+                <span className={`font-semibold ${daysLeft <= 0 ? 'text-red-700' : 'text-emerald-700'}`}>
+                  {daysLeft > 0 ? `${daysLeft}d remaining` : 'Expired'}
+                </span>
+              </p>
+              {tenantContext.trialNotes && <p className="text-slate-600">{tenantContext.trialNotes}</p>}
+            </div>
+            <a
+              href={`/pay?org=${encodeURIComponent(tenantContext.organizationId || '')}`}
+              className="px-4 py-2 text-xs font-semibold text-white bg-[#0032A0] hover:bg-[#00257a] rounded-lg whitespace-nowrap shrink-0 text-center"
+            >
+              Upgrade Plan
+            </a>
+          </div>
+        );
+      })()}
+
       {needsCloudAuth && (
         <div className="bg-amber-50 border border-amber-200 text-amber-950 rounded-xl p-4 flex items-start gap-3 text-xs leading-relaxed">
           <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
           <div>
             <p className="font-semibold">Cloud Firestore Sync Waiting for Admin Google Authorization</p>
             <p className="mt-0.5 text-amber-900">
-              Students, Exams, Attempts, and Revenue show <span className="font-mono font-semibold">0</span> because only public courses are readable under a passcode-only session. Click <span className="font-semibold">Link Cloud Account (One-Time)</span> in the top banner above and sign in with <span className="font-mono">gurukulclassestech@gmail.com</span> or <span className="font-mono">advaitp38@gmail.com</span> to unlock live data.
+              Students, Exams, Attempts, and Revenue show <span className="font-mono font-semibold">0</span> because only public courses are readable under a passcode-only session. Click <span className="font-semibold">Link Cloud Account (One-Time)</span> in the top banner above and sign in with <span className="font-mono">gurukulclassestech@gmail.com</span> to unlock live data.
             </p>
           </div>
         </div>

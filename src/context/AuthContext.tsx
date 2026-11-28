@@ -14,9 +14,10 @@ import {
 import { doc, getDoc, onSnapshot, setDoc, subscribeCloudAuthNeeded } from '../lib/tenantDb';
 import { DEFAULT_ROOT_ORG_ID, setActiveTenantOrgId } from '../lib/tenantDb';
 import { auth, db, googleAuthProvider, isAuthorizedAdminEmail, testFirestoreConnection } from '../lib/firebase';
+import { buildDefaultFrontendConfig } from '../lib/gurukulData';
 import { DEFAULT_INSTITUTE_SETTINGS } from '../lib/portalService';
 import { salarApi } from '../lib/salarApi';
-import type { InstituteSettings, StudentProfile, UserRole } from '../types/portal';
+import type { FrontendCustomizationConfig, InstituteSettings, StudentProfile, UserRole } from '../types/portal';
 import type { TenantContextResponse } from '../types/salar';
 
 const ROOT_ADMIN_BEARER_KEY = 'salar_root_admin_bearer';
@@ -47,7 +48,7 @@ interface AuthContextValue {
     password: string;
     mobile: string;
     classLevel: 'Class 11th' | 'Class 12th' | 'Dropper / Repeater';
-    targetExam: 'JEE Main' | 'JEE Advanced' | 'MHT-CET' | 'Boards + CET' | 'JEE Main + Advanced';
+    targetExam: 'JEE Main' | 'JEE Advanced' | 'MHT-CET' | 'NEET' | 'Boards + CET' | 'JEE Main + Advanced' | 'PCMB Foundation';
     origin?: 'PORTAL_SIGNUP' | 'QUICK_JOIN';
   }) => Promise<{ error?: string }>;
   resetPassword: (email: string) => Promise<{ error?: string }>;
@@ -58,19 +59,51 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+function mergeFrontendConfig(
+  baseName: string,
+  incoming?: Partial<FrontendCustomizationConfig>
+): FrontendCustomizationConfig {
+  const defaults = buildDefaultFrontendConfig(baseName);
+  if (!incoming) return defaults;
+  return {
+    ...defaults,
+    ...incoming,
+    highlights: Array.isArray(incoming.highlights) ? incoming.highlights : defaults.highlights,
+    subjects: Array.isArray(incoming.subjects) ? incoming.subjects : defaults.subjects,
+    approachSteps: Array.isArray(incoming.approachSteps) ? incoming.approachSteps : defaults.approachSteps,
+    features: Array.isArray(incoming.features) ? incoming.features : defaults.features,
+    campusFacilities: Array.isArray(incoming.campusFacilities) ? incoming.campusFacilities : defaults.campusFacilities,
+    performers: Array.isArray(incoming.performers) ? incoming.performers : defaults.performers,
+    gpatSchedules: Array.isArray(incoming.gpatSchedules) ? incoming.gpatSchedules : defaults.gpatSchedules,
+    testimonial: {
+      ...defaults.testimonial,
+      ...(incoming.testimonial || {}),
+    },
+    sectionHeadings: {
+      ...defaults.sectionHeadings,
+      ...(incoming.sectionHeadings || {}),
+    },
+    sectionVisibility: {
+      ...defaults.sectionVisibility,
+      ...(incoming.sectionVisibility || {}),
+    },
+  };
+}
+
 function makeTenantFallbackSettings(ctx: TenantContextResponse | null): InstituteSettings {
   if (!ctx || !ctx.instituteName || ctx.organizationId === DEFAULT_ROOT_ORG_ID) {
     return DEFAULT_INSTITUTE_SETTINGS;
   }
+  const defaultFrontend = buildDefaultFrontendConfig(ctx.instituteName);
   return {
     ...DEFAULT_INSTITUTE_SETTINGS,
     instituteName: ctx.instituteName,
-    tagline: 'Online Computer-Based Testing & Academic Portal',
+    tagline: 'Physics, Chemistry, Mathematics & Biology · Online Computer-Based Testing Portal',
     storageTag: ctx.tenantId || ctx.organizationId || 'tenant-vault',
     logoUrl: ctx.logoUrl || '',
-    heroTitle: `${ctx.instituteName} — Online Examination & Learning Portal`,
+    heroTitle: `${ctx.instituteName} — PCMB Examination & Learning Portal`,
     heroSubtitle:
-      'Computer-Based Test (CBT) engine, chapterwise question banks, structured courses, and instant rank analytics.',
+      'Computer-Based Test (CBT) engine, Physics, Chemistry, Mathematics & Biology question banks, structured courses, and instant rank analytics.',
     address: ctx.address || 'Institute Campus',
     phone: ctx.phone || '',
     whatsapp: ctx.phone || '',
@@ -87,6 +120,7 @@ function makeTenantFallbackSettings(ctx: TenantContextResponse | null): Institut
       upiId: '',
       upiPayeeName: ctx.instituteName,
       storageProvider: `SALAR Isolated Vault (${ctx.tenantId || ctx.organizationId})`,
+      frontend: defaultFrontend,
     },
   };
 }
@@ -252,6 +286,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [routeKey]);
 
+  // Periodically refresh tenantContext on window focus/visibility so trial extensions/conversions show live
+  useEffect(() => {
+    const pathClean = window.location.pathname.replace(/\/+$/, '') || '/';
+    if (pathClean === '/owner' || pathClean === '/owner/dashboard' || pathClean === '/pay') return;
+    let lastChecked = Date.now();
+    const refreshCtx = () => {
+      if (document.visibilityState === 'hidden') return;
+      const now = Date.now();
+      if (now - lastChecked < 15000) return;
+      lastChecked = now;
+      salarApi
+        .getTenantContext()
+        .then((ctx) => {
+          if (ctx?.found) setTenantContext(ctx);
+        })
+        .catch(() => {});
+    };
+    window.addEventListener('focus', refreshCtx);
+    document.addEventListener('visibilitychange', refreshCtx);
+    return () => {
+      window.removeEventListener('focus', refreshCtx);
+      document.removeEventListener('visibilitychange', refreshCtx);
+    };
+  }, [routeKey]);
+
   // Restore Admin session cookie or Bearer token (primary root OR isolated secondary tenant)
   useEffect(() => {
     if (!tenantResolved) return;
@@ -336,6 +395,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               ...base.portalConfig,
               ...(data.portalConfig || {}),
               allowGoogleAuth: isIsolatedTenant ? false : (data.portalConfig?.allowGoogleAuth ?? true),
+              frontend: mergeFrontendConfig(normalizedName, data.portalConfig?.frontend),
             },
           });
         }
@@ -363,7 +423,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const uname = (user.email || user.displayName || 'student').split('@')[0].replace(/[^a-zA-Z0-9_]/g, '').toLowerCase();
     const newProfile: Omit<StudentProfile, 'id'> = {
       uid: user.uid,
-      name: extra?.name || user.displayName || 'Mathematics Student',
+      name: extra?.name || user.displayName || 'PCMB Student',
       email: user.email || '',
       mobile: extra?.mobile || '',
       whatsapp: extra?.whatsapp || extra?.mobile || '',
@@ -461,7 +521,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (intendedRole === 'SUPER_ADMIN' && !isPrimary && !isAdminDoc) {
             await signOut(auth);
             setCloudLinkError(
-              `Account ${user.email} does not hold Super Admin authorization. Sign in with gurukulclassestech@gmail.com or advaitp38@gmail.com.`
+              `Account ${user.email} does not hold Super Admin authorization. Sign in with gurukulclassestech@gmail.com.`
             );
             return;
           }
@@ -581,7 +641,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (intendedRole === 'SUPER_ADMIN') {
         if (!isPrimary && !isAdminDoc) {
           await signOut(auth);
-          const errMsg = `Account ${user.email} does not hold Super Admin authorization. Please sign in with gurukulclassestech@gmail.com or advaitp38@gmail.com.`;
+          const errMsg = `Account ${user.email} does not hold Super Admin authorization. Please sign in with gurukulclassestech@gmail.com.`;
           setCloudLinkError(errMsg);
           return {
             role: 'STUDENT',
@@ -668,7 +728,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     password: string;
     mobile: string;
     classLevel: 'Class 11th' | 'Class 12th' | 'Dropper / Repeater';
-    targetExam: 'JEE Main' | 'JEE Advanced' | 'MHT-CET' | 'Boards + CET' | 'JEE Main + Advanced';
+    targetExam: 'JEE Main' | 'JEE Advanced' | 'MHT-CET' | 'NEET' | 'Boards + CET' | 'JEE Main + Advanced' | 'PCMB Foundation';
     origin?: 'PORTAL_SIGNUP' | 'QUICK_JOIN';
   }) => {
     if (isIsolatedTenant) {
